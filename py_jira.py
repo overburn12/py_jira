@@ -181,28 +181,4 @@ def filter_single_result(hb):
         return temp_hb
     else:
         return None
-
-
-
-def create_hb_string(hashboard):
-    if 'progress_update' in hashboard:
-        return f"\nTotal Issues: {hashboard['total']}, Proccessing at: {hashboard['current']}\n"
     
-    def initials(author):
-        name = author.split()  # Split the name into a list of words
-        initials = "".join(word[0].upper() for word in name)  # Get the first letter of each word and join them
-        return initials
-    
-    answer = ""
-    answer += f"\n{hashboard['serial']} ({hashboard['board_model']})\n{hashboard['repair_summary']}\n"
-
-    for thing in hashboard['events']:
-        if(thing["type"]=="status_change"):
-            if(thing["to"]=="Advanced Repair"):
-                answer += f"{thing['time']} ({initials(thing['author'])}) {thing['to']} ({thing['length']})\n"
-            else:
-                answer += f"{thing['time']} ({initials(thing['author'])}) {thing['to']}\n"
-        if(thing["type"]=="comment"):
-            answer += f"{thing['time']} ({initials(thing['author'])})     {thing['body']}\n"
-
-    return answer
