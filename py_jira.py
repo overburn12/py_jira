@@ -10,10 +10,19 @@ def connect_jira():
     server = os.getenv('SERVER')
     email = os.getenv('EMAIL')
     token = os.getenv('JIRA_TOKEN')
+    root_cert = os.getenv('ROOT_CERT')
 
-    jira_options = {
-        'server': server 
-    }
+    if root_cert:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        cert_path = os.path.join(current_dir, root_cert)
+        jira_options = {
+            'server': server,
+            'verify': cert_path
+        }
+    else:
+        jira_options = {
+            'server': server 
+        }
 
     try:
         jira = JIRA(options=jira_options, basic_auth=(email, token))
