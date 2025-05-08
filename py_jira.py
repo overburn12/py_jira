@@ -13,6 +13,7 @@ def connect_jira():
     root_cert = os.getenv('ROOT_CERT')
 
     if root_cert:
+        print('Using root cert')
         current_dir = os.path.dirname(os.path.abspath(__file__))
         cert_path = os.path.join(current_dir, root_cert)
         jira_options = {
@@ -191,3 +192,111 @@ def filter_single_result(hb):
     else:
         return None
     
+
+def update_jira_with_board_data(jira, board_data):
+    serial = board_data.get("serial")
+    board_model = board_data.get("boardModel")
+
+    if not serial:
+        print("No serial number provided. Skipping.")
+        return
+
+    if not board_model:
+        print(f"No board model found for serial {serial}. Skipping update.")
+        return
+
+    # JQL to find the issue by serial (assumed to be in the summary)
+    jql = f'summary ~ "{serial}" AND issuetype = Task'
+
+    try:
+        issues = jira.search_issues(jql, maxResults=1)
+        if not issues:
+            print(f"No JIRA issue found for serial: {serial}. Skipping update.")
+            return
+
+        issue = issues[0]
+        fields_to_update = {}
+
+        # Current field values
+        current_board_model = getattr(issue.fields, "customfield_10230", None)
+        current_frequency = getattr(issue.fields, "customfield_10229", None)
+        current_hashrate = getattr(issue.fields, "customfield_10153", None)
+
+        # Board Model - only update if different
+        if not current_board_model or current_board_model.value != board_model:
+            fields_to_update["customfield_10230"] = {"value": board_model}
+
+        # Optional: Frequency
+        if "frequency" in board_data and (not current_frequency or current_frequency.strip() != board_data["frequency"]):
+            fields_to_update["customfield_10229"] = board_data["frequency"]
+
+        # Optional: Hashrate
+        if "hashRate" in board_data and (not current_hashrate or current_hashrate.strip() != board_data["hashRate"]):
+            fields_to_update["customfield_10153"] = board_data["hashRate"]
+
+        if fields_to_update:
+            issue.update(fields=fields_to_update)
+            print(f"Updated issue {issue.key} with: {fields_to_update}")
+        else:
+            print(f"No updates needed for issue {issue.key}")
+
+    except Exception as e:
+        print(f"Error updating board data for serial {serial}: {e}")
+
+
+def update_jira_with_board_data_JUNK(jira, board_data):
+    serial = board_data.get('serial')
+    board_model = board_data.get('boardModel')
+    frequency = board_data.get('frequency')
+    hash_rate = board_data.get('hashRate')
+
+    if not serial:
+        print("Missing serial number. Skipping.")
+        return
+
+    if not board_model:
+        print(f"No board model for serial {serial}. Skipping update.")
+        return
+
+    try:
+        jql = f'summary ~ "{serial}" AND issuetype = Task'
+        issues = jira.search_issues(jql, maxResults=1)
+        if not issues:
+            print(f"Error, serial {serial} not foundin JIRA. Skipping.")
+            return
+
+        issue = issues[0]
+        update_fields = {}
+
+        # Only update fields if they're missing or different
+        if getattr(issue.fields, 'customfield_10230', None) != board_model:
+            update_fields['customfield_10230'] = board_model
+
+        if frequency and getattr(issue.fields, 'customfield_10229', None) != frequency:
+            update_fields['customfield_10229'] = frequency
+
+        if hash_rate and getattr(issue.fields, 'customfield_10153', None) != hash_rate:
+            update_fields['customfield_10153'] = hash_rate
+
+        if update_fields:
+            jira.update(fields=update_fields)
+            print(f"Updated {issue.key} with new board data.")
+        else:
+            print(f"No changes needed for {issue.key}.")
+
+    except Exception as e:
+        print(f"Error updating JIRA for serial {serial}: {e}")
+
+#---------------------------------------------------------------------------
+# testing
+
+if False:
+    jira = connect_jira()
+    test_board = {
+        "serial": "HKYQYPDBBAJBG005T",
+        "boardModel": "BHB56801",
+        "frequency": "485 Mhz",
+        "hashRate": "47694.473 GH/s"
+    }
+    
+    update_jira_with_board_data(jira, test_board)

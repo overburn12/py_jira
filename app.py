@@ -1,4 +1,5 @@
 from flask import Flask, flash, make_response, session, redirect, url_for, render_template, request, jsonify, Response
+from flask_cors import CORS
 from werkzeug.security import check_password_hash
 from functools import wraps
 from dotenv import load_dotenv
@@ -7,6 +8,7 @@ import os, json
 import py_jira
 
 app = Flask(__name__)
+CORS(app)
 
 #--------------------------------------------------------------------------------------
 # environment variables / constants
@@ -130,6 +132,24 @@ def api():
         return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route('/update_board', methods=['POST'])
+#@admin_required # disable authentication for testing purposes
+def update_board():
+    try:
+        board_data = request.json
+        if not board_data:
+            return jsonify({"error": "Missing board data"}), 400
+
+        jira_obj = py_jira.connect_jira()
+        py_jira.update_jira_with_board_data(jira_obj, board_data)
+
+        return "OKAY", 200
+
+    except Exception as e:
+        app.logger.error(f"Error in /update_board: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
 #--------------------------------------------------------------------------------------
 
 @app.route('/favicon.ico')
@@ -145,4 +165,4 @@ def page_not_found(e):
 #--------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    app.run(host ='::', port=PORT, debug=DEBUG)
+    app.run(host ='0.0.0.0', port=PORT, debug=DEBUG)
