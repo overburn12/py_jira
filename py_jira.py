@@ -13,7 +13,6 @@ def connect_jira():
     root_cert = os.getenv('ROOT_CERT')
 
     if root_cert:
-        print('Using root cert')
         current_dir = os.path.dirname(os.path.abspath(__file__))
         cert_path = os.path.join(current_dir, root_cert)
         jira_options = {
@@ -243,49 +242,6 @@ def update_jira_with_board_data(jira, board_data):
     except Exception as e:
         print(f"Error updating board data for serial {serial}: {e}")
 
-
-def update_jira_with_board_data_JUNK(jira, board_data):
-    serial = board_data.get('serial')
-    board_model = board_data.get('boardModel')
-    frequency = board_data.get('frequency')
-    hash_rate = board_data.get('hashRate')
-
-    if not serial:
-        print("Missing serial number. Skipping.")
-        return
-
-    if not board_model:
-        print(f"No board model for serial {serial}. Skipping update.")
-        return
-
-    try:
-        jql = f'summary ~ "{serial}" AND issuetype = Task'
-        issues = jira.search_issues(jql, maxResults=1)
-        if not issues:
-            print(f"Error, serial {serial} not foundin JIRA. Skipping.")
-            return
-
-        issue = issues[0]
-        update_fields = {}
-
-        # Only update fields if they're missing or different
-        if getattr(issue.fields, 'customfield_10230', None) != board_model:
-            update_fields['customfield_10230'] = board_model
-
-        if frequency and getattr(issue.fields, 'customfield_10229', None) != frequency:
-            update_fields['customfield_10229'] = frequency
-
-        if hash_rate and getattr(issue.fields, 'customfield_10153', None) != hash_rate:
-            update_fields['customfield_10153'] = hash_rate
-
-        if update_fields:
-            jira.update(fields=update_fields)
-            print(f"Updated {issue.key} with new board data.")
-        else:
-            print(f"No changes needed for {issue.key}.")
-
-    except Exception as e:
-        print(f"Error updating JIRA for serial {serial}: {e}")
 
 #---------------------------------------------------------------------------
 # testing
