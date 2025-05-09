@@ -5,7 +5,6 @@ import os
 
 load_dotenv()
 
-
 def connect_jira():
     server = os.getenv('SERVER')
     email = os.getenv('EMAIL')
@@ -33,7 +32,13 @@ def connect_jira():
     return jira
 
 
-def get_all_rt_epics(jira):
+jira = connect_jira()
+
+#-------------------------------------------------------------------------------------------------------------
+# functions
+#-------------------------------------------------------------------------------------------------------------
+
+def get_all_rt_epics():
     try:
         jql = 'issuetype = Epic AND project = RT ORDER BY created DESC'
         epics = jira.search_issues(jql, maxResults=1000)
@@ -52,7 +57,7 @@ def get_all_rt_epics(jira):
         return []
 
 
-def get_hashboards_from_epic(jira, epic_key):
+def get_hashboards_from_epic(epic_key):
     jql = f'"Epic Link" = {epic_key} AND issuetype = Task'
 
     start_at = 0
@@ -192,7 +197,7 @@ def filter_single_result(hb):
         return None
     
 
-def update_jira_with_board_data(jira, board_data):
+def update_jira_with_board_data(board_data):
     serial = board_data.get("serial")
     board_model = board_data.get("boardModel")
 
@@ -243,11 +248,11 @@ def update_jira_with_board_data(jira, board_data):
         print(f"Error updating board data for serial {serial}: {e}")
 
 
-#---------------------------------------------------------------------------
-# testing
+#-------------------------------------------------------------------------------------------------------------
+# testing area
+#-------------------------------------------------------------------------------------------------------------
 
 if False:
-    jira = connect_jira()
     test_board = {
         "serial": "HKYQYPDBBAJBG005T",
         "boardModel": "BHB56801",
@@ -255,4 +260,4 @@ if False:
         "hashRate": "47694.473 GH/s"
     }
     
-    update_jira_with_board_data(jira, test_board)
+    update_jira_with_board_data(test_board)

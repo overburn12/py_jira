@@ -105,8 +105,7 @@ def logout():
 @admin_required
 def get_orders():
     try:
-        jira_obj = py_jira.connect_jira()
-        epic_list = py_jira.get_all_rt_epics(jira_obj)
+        epic_list = py_jira.get_all_rt_epics()
         return jsonify(epic_list)
     except Exception as e:
         app.logger.error(f"Error in /orders: {e}")
@@ -120,9 +119,7 @@ def api():
         rt_number = request.json['rt_number']
 
         def generate_data():
-            jira_obj = py_jira.connect_jira()
-
-            for raw_hb in py_jira.get_hashboards_from_epic(jira_obj, rt_number):
+            for raw_hb in py_jira.get_hashboards_from_epic(rt_number):
                 yield json.dumps(py_jira.filter_single_result(raw_hb), default=str) + '\n'
 
         return Response(generate_data(), mimetype='application/x-ndjson')
@@ -140,8 +137,7 @@ def update_board():
         if not board_data:
             return jsonify({"error": "Missing board data"}), 400
 
-        jira_obj = py_jira.connect_jira()
-        py_jira.update_jira_with_board_data(jira_obj, board_data)
+        py_jira.update_jira_with_board_data(board_data)
 
         return "OKAY", 200
 
