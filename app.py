@@ -34,7 +34,7 @@ def repair_time_page():
 # API Routes
 #--------------------------------------------------------------------------------------
 
-@app.route('/chip_count')
+@app.route('/chip_count', methods=['POST'])
 def chip_count():
     data = request.json()
     board_chip_count = data['chip_count']
