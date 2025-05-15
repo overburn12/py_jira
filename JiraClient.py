@@ -159,6 +159,24 @@ class JiraClient(JiraWrapper):
     def update_jira_with_board_data(self, board_data):
         # function for updating the board data scraped from the arc tester
 
+        valid_board_models = [
+            "NBS1906",
+            "BHB42831",
+            "NBP1901",
+            "BHB42603",
+            "BHB42631",
+            "BHB42841",
+            "BHB42601",
+            "BHB56801",
+            "BHB42621",
+            "BHB42651",
+            "BHB56903",
+            "BHB68606",
+            "BHB68603",
+            "A3HB70601",
+            "BHB68701"
+        ]
+
         serial = board_data.get("serial")
         board_model = board_data.get("boardModel")
 
@@ -189,7 +207,10 @@ class JiraClient(JiraWrapper):
 
             # Board Model - only update if different
             if not current_board_model or current_board_model.value != board_model:
-                fields_to_update["customfield_10230"] = {"value": board_model}
+                if current_board_model in valid_board_models:
+                    fields_to_update["customfield_10230"] = {"value": board_model}
+                else:
+                    logger.warning(f"Invalid board model detected. {current_board_model} not in JIRA options.")
 
             # Optional: Frequency
             if "frequency" in board_data and (not current_frequency or current_frequency.strip() != board_data["frequency"]):
