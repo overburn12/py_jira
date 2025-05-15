@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}
+    JIRA Script Menu
+{% endblock %}
+
+{% block head %}
+    <style>
+        .element-block{
+            width: 600px;
+        }
+        #response {
+            width: 100%;
+            min-height: 300px;
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 14px;
+            font-family: monospace;
+            resize: none;
+            box-sizing: border-box;
+            white-space: pre; 
+            overflow-x: auto; 
+            overflow-y: auto;
+            display: none;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    {{ block_header('Menu links') }}
+    <div style="padding: 20px;">
+
+        &bull; <a href="/repair">Repair Time Summary</a><br>
+        &bull; <a href="#" onclick="fetchAndDisplayData('/dump_rt_data')">Update RT Epic Metadata</a> <br>
+        <br>
+        ARC Tester Chome Extension<br>
+        &bull; <a href="static/manifest.json">manifest.json</a> <br>
+        &bull; <a href="static/content.js">content.js</a> <br>
+    </div>
+    <textarea id="response" readonly></textarea>
+
+
+    {{ block_footer() }}
+{% endblock %}
+
+
+{% block script %}
+    <script>
+        function fetchAndDisplayData(endpoint) {
+            // Fetch the API data
+            fetch(endpoint)
+            .then(response => response.text())
+            .then(data => {
+                // Get the textarea element
+                const textarea = document.getElementById('response');
+                
+                // Update the textarea value
+                textarea.value = data;
+                
+                // Make the textarea visible
+                textarea.style.display = 'block';
+            })
+            .catch(error => console.error('Error fetching data:', error));
+        }
+    </script>
+{% endblock %}

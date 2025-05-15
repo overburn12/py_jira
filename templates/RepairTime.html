@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Repair Time Summary
+{% endblock %}
+
+{% block head %}
+    <style>
+        .element-block {
+            width: 1000px;
+            height: calc(100vh - 100px);
+        }
+        #response {
+            width: 100%;
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 14px;
+            font-family: monospace;
+            resize: none;
+            box-sizing: border-box;
+            white-space: pre; 
+            overflow-x: auto; 
+            overflow-y: auto;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+{{ block_header('Repair Time Summary') }}
+        <form id="rt-form">
+            <label for="rt_number">Select RT Number:</label>
+            <select id="rt_number" name="rt_number">
+                <option value="">Loading...</option>
+            </select>
+            <input type="submit" value="Submit">
+        </form>
+        <textarea id="response" readonly></textarea><br>
+        <div>
+            <span id="progressLabel" style="font-size: 12px; display: none;"></span>
+            <progress id="progressBar" value="0" max="1" style="width: 100%; display: none;"></progress>
+        </div>
+        <label style="font-size: 12px;">Selects Hashboards with both 'Advanced Repair' and 'Awaiting Functional Test' statuses, 
+               excluding 'Scrap' status. For comments, all '\n' have been replaced with '-'.</label>
+    {{ block_footer() }}
+{% endblock %}
+
+{% block script %}
+    <script src="static/index.js"></script>
+{% endblock %}
+
