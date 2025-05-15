@@ -34,6 +34,16 @@ def repair_time_page():
 # API Routes
 #--------------------------------------------------------------------------------------
 
+@app.route('/chip_count')
+def chip_count():
+    data = request.json()
+    board_chip_count = data['chip_count']
+    board_serial = data['serial']
+    print(f"CHIP COUNT RECIEVED: {board_chip_count} FOR SERIAL: {board_serial}")
+    
+    #dummy api route for now. print to console for testing.
+    return "OKAY!"
+
 @app.route('/dump_rt_data')
 def dump_rt_data():
     return client.dump_all_rt_epics_metadata()
