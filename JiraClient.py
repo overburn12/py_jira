@@ -192,7 +192,7 @@ class JiraClient(JiraWrapper):
         jql = f'summary ~ "{serial}" AND issuetype = Task'
 
         try:
-            issues = self.search_issues(jql, maxResults=1)
+            issues = list(self.search_issues(jql, batch_size=1))
             if not issues:
                 logger.warning(f"No JIRA issue found for serial: {serial}. Skipping update.")
                 return
