@@ -224,7 +224,7 @@ class JiraClient(JiraWrapper):
                 issue.update(fields=fields_to_update)
                 logger.info(f"Updated {serial} with: {fields_to_update}")
             else:
-                logger.info(f"No updates needed for issue {issue.key}")
+                logger.info(f"No updates needed for {serial}")
 
         except Exception as e:
             logger.error(f"Error updating board data for serial {serial}: {e}")
