@@ -36,7 +36,7 @@ def repair_time_page():
 
 @app.route('/chip_count', methods=['POST'])
 def chip_count():
-    data = request.json()
+    data = request.json
     board_chip_count = data['chip_count']
     board_serial = data['serial']
     print(f"CHIP COUNT RECIEVED: {board_chip_count} FOR SERIAL: {board_serial}")
