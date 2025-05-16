@@ -29,6 +29,9 @@ def repair_time_page():
     return render_template('RepairTime.html') 
 
 
+@app.route('/timeline', methods=['GET'])
+def timeline_page():
+    return render_template('Timeline.html')
 
 #--------------------------------------------------------------------------------------
 # API Routes
@@ -44,9 +47,11 @@ def chip_count():
     #dummy api route for now. print to console for testing.
     return "OKAY!"
 
+
 @app.route('/dump_rt_data')
 def dump_rt_data():
     return client.dump_all_rt_epics_metadata()
+
 
 @app.route('/get_orders')
 def get_orders():
@@ -89,6 +94,19 @@ def update_board():
         print(f"Error in /update_board: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
+
+@app.route('/get_timeline', methods=['GET'])
+def get_timeline():
+    rt_key = str(request.args.get('rt'))
+    if not rt_key:
+        return jsonify({'error': 'RT number is required'}), 400
+
+    try:
+        data = client.create_epic_timeline_data(rt_key)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 
 #--------------------------------------------------------------------------------------
 

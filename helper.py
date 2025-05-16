@@ -19,6 +19,10 @@ def date_range(start_date, end_date):
         current_date += timedelta(days=1)
 
 
+def previous_day(date_obj, day_delta = 1):
+    return date_obj - timedelta(days=day_delta)
+
+
 def get_initials(input_string):
     words = input_string.split()
     initials = [word[0].upper() for word in words]
@@ -40,3 +44,27 @@ def full_rt(epic_key):
             return "RT-" + epic_key
         else:
             return epic_key
+        
+
+def format_timeline_for_chartjs(epic_data):
+    timeline = epic_data["timeline"]
+    
+    # Sorted list of date labels
+    labels = sorted(timeline.keys())
+
+    # Find all possible status labels from the first day (assumes all days have same keys)
+    all_statuses = timeline[labels[0]].keys()
+
+    # Build datasets: one per status
+    datasets = []
+    for status in all_statuses:
+        datasets.append({
+            "label": status,
+            "data": [timeline[day][status] for day in labels]
+        })
+
+    return {
+        "labels": labels,
+        "datasets": datasets,
+        "title": epic_data['title']
+    }

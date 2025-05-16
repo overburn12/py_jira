@@ -1,0 +1,157 @@
+<!-- timeline.html -->
+{% extends "base.html" %}
+
+{% block title %}Timeline Fetcher{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+    <style>
+        #timeline-form {
+            margin-bottom: 20px;
+        }
+        
+        #rt-selection {
+            width: 200px;
+            height: 25px;
+            font-size: 16px;
+            padding: 5px;
+        }
+        .element-block{
+            width: 90%;
+            height: 90%;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    {{ block_header('Order Timeline') }}
+        <form id="rt-form">
+            <label for="rt_number">Select RT Number:</label>
+            <select id="rt_number" name="rt_number">
+                <option value="">Loading...</option>
+            </select>
+            <input type="submit" value="Submit">
+        </form>
+        <div style="position: relative; height: 400px; width: 100%;">
+            <canvas id="timeline-chart"></canvas>
+        </div>
+    {{ block_footer() }}
+{% endblock %}
+
+{% block script %}
+    <script>
+        const form = document.getElementById('rt-form');
+        const rtSelect = document.getElementById('rt_number');
+        const ctx = document.getElementById('timeline-chart').getContext('2d');
+        let timelineChart = null;
+
+        // Fetch orders and populate dropdown
+        async function loadOrders() {
+            try {
+                const response = await fetch('/get_orders');
+                const orders = await response.json();
+                rtSelect.innerHTML = '';  // Clear current options
+
+                orders.forEach(order => {
+                    const option = document.createElement('option');
+                    option.value = order.rt_num;  // only RT number is sent on submit
+                    option.textContent = `${order.rt_num} - ${order.summary}`;
+                    rtSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load orders:', error);
+                rtSelect.innerHTML = '<option value="">Failed to load</option>';
+            }
+        }
+
+        loadOrders(); // load when page loads
+
+
+
+        // Status-to-color map
+        const statusColors = {
+            "Backlog": "gray",
+            "Passed Initial Diagnosis": "green",
+            "Awaiting Advanced Repair": "lightblue",
+            "Awaiting Functional Test": "blue",
+            "Done": "darkgray",
+            "Scrap": "red",
+            "Hashboard Replacement Program": "orange",
+            "Advanced Repair": "yellow",
+            "Total Boards": "black"
+        };
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const rtValue = rtSelect.value;
+
+            try {
+                const response = await fetch(`/get_timeline?rt=${rtValue}`);
+                const data = await response.json();
+
+                // Clear old chart if it exists
+                if (timelineChart) {
+                    timelineChart.destroy();
+                }
+
+                // Extract labels and build datasets
+                const labels = data.labels;
+                const datasets = data.datasets.map(ds => ({
+                    label: ds.label,
+                    data: ds.data,
+                    borderColor: statusColors[ds.label] || 'black',
+                    backgroundColor: statusColors[ds.label] || 'black',
+                    fill: false,
+                    tension: 0.1
+                }));
+
+                // Create chart
+                timelineChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: data.title || `Timeline for RT ${data.rt}`
+                            },
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Count'
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching timeline:', error);
+                alert(`Failed to fetch timeline data: ${error.message}`);
+            }
+        });
+    </script>
+{% endblock %}

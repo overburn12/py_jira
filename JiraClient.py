@@ -1,7 +1,7 @@
 import json, os, datetime
 from datetime import date, datetime
 
-from helper import logger, load_epic_metadata, date_range, get_initials, full_rt
+from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, format_timeline_for_chartjs, previous_day
 from JiraWrapper import JiraWrapper
 
 
@@ -284,7 +284,7 @@ class JiraClient(JiraWrapper):
         full_key = full_rt(epic_key)
         os.makedirs(output_dir, exist_ok=True)
 
-        logger.text(f"Dumping all task issues for {full_key}...")
+        logger.info(f"Dumping all task issues for {full_key}...")
 
         file_path = os.path.join(output_dir, f"{full_key}.json")
         issue_data = []
@@ -299,7 +299,7 @@ class JiraClient(JiraWrapper):
                 json.dump(issue_data, f, indent=2, ensure_ascii=False)
 
 
-            logger.text(f"Saved {len(issue_data)} issues to {file_path}")
+            logger.info(f"Saved {len(issue_data)} issues to {file_path}")
         except Exception as e:
             logger.exception(f"Failed to dump {full_key}: {e}")
 
@@ -456,26 +456,27 @@ class JiraClient(JiraWrapper):
 
     def build_and_fill_epic_timeline(self, epic_key):
         #creates a timeline container with total counts for each status for each day
-
         timeline = {}
         start_date, end_date = self.get_max_min_epic_dates(epic_key)
 
         if start_date is None and end_date is None:
+            logger.warning(f"No data for {epic_key}")
             return None
 
         #build the empty timeline container
         for day in date_range(start_date, end_date):
-            timeline[day] = {}
-        #    timeline[day] = {
-        #        "Backlog": 0,
-        #        "Awaiting Advanced Repair": 0,
-        #        "Advanced Repair": 0,
-        #        "Passed Initial Diagnosis": 0,
-        #        "Awaiting Functional Test": 0,
-        #        "Done": 0,
-        #        "Scrap": 0,
-        #        "Hashboard Replacement Program": 0
-        #    }
+        #    timeline[day] = {}
+            timeline[day] = {
+                "Backlog": 0,
+                "Awaiting Advanced Repair": 0,
+                "Advanced Repair": 0,
+                "Passed Initial Diagnosis": 0,
+                "Awaiting Functional Test": 0,
+                "Done": 0,
+                "Scrap": 0,
+                "Hashboard Replacement Program": 0,
+                "Total Boards": 0
+            }
 
         #load the epic file
         epic_data = self.load_issues_from_file(epic_key)
@@ -485,23 +486,41 @@ class JiraClient(JiraWrapper):
             hb_timeline = self.simplify_hashboard_timeline(hashboard, start_date, end_date)
             for day in hb_timeline:
                 if hb_timeline[day] is not None:
-                    #timeline[day][hb_timeline[day]] += 1
                     timeline[day][hb_timeline[day]] = timeline[day].get(hb_timeline[day], 0) + 1
-                
-        return timeline
+                    #timeline[day][hb_timeline[day]] += 1
+                    timeline[day]['Total Boards'] += 1
+
+        #prune leading errors created when hasboard replacement program is used
+        new_timeline = {}
+        START = False
+
+        for day in timeline:
+            if timeline[day]['Total Boards'] > 4:
+                START = True
+            if START:
+                if timeline[day]['Done'] == timeline[day]['Total Boards']:
+                    break
+                new_timeline[day] = timeline[day]
+
+        #jsonify cant serialize datatime as a key, so convert to iso format
+        timeline_str_keys = {day.isoformat(): data for day, data in new_timeline.items()}
+
+        return timeline_str_keys
 
 
     def create_epic_timeline_data(self, epic):
     #used for sending packaged data to front end
-
         timeline = self.build_and_fill_epic_timeline(epic)
         epic_summary = self.get_epic_summary(epic)
 
-        return {
+        epic_data = {
             "rt": epic,
             "title": epic_summary,
             "timeline": timeline
         }
+
+
+        return format_timeline_for_chartjs(epic_data)
 
 
 
