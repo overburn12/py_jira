@@ -6,6 +6,11 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
+<script>
+    Chart.register(window['chartjs-plugin-annotation']);
+</script>
+
 
     <style>
         #timeline-form {
@@ -34,7 +39,7 @@
             </select>
             <input type="submit" value="Submit">
         </form>
-        <div style="position: relative; height: 400px; width: 100%;">
+        <div style="position: relative; height: 100%; width: 100%;">
             <canvas id="timeline-chart"></canvas>
         </div>
     {{ block_footer() }}
@@ -69,6 +74,59 @@
         loadOrders(); // load when page loads
 
 
+        function formatTimelineForChartjs(epicData) {
+            const timeline = epicData.timeline;
+            
+            // Sorted list of date labels
+            const labels = Object.keys(timeline).sort();
+        
+            // Find all possible status labels from the first day (assumes all days have same keys)
+            const allStatuses = Object.keys(timeline[labels[0]]);
+        
+            // Build datasets: one per status
+            const datasets = allStatuses.map(status => {
+                return {
+                    "label": status,
+                    "data": labels.map(day => timeline[day][status].length)
+                };
+            });
+        
+            return {
+                "labels": labels,
+                "datasets": datasets,
+                "title": epicData.title
+            };
+        }
+
+        function generateWeekendBoxes(dateLabels) {
+            const annotations = [];
+            let currentBox = null;
+        
+            dateLabels.forEach((dateStr, idx) => {
+                const day = new Date(dateStr);
+                const dayOfWeek = day.getUTCDay(); // Sunday=0, Saturday=6
+        
+                if (dayOfWeek === 6) { // Saturday
+                    // Start of weekend box (shift back 12 hours)
+                    const xMin = new Date(day.getTime() - (12-4) * 60 * 60 * 1000).toISOString();
+                    currentBox = {
+                        type: 'box',
+                        xMin: xMin,
+                        backgroundColor: 'rgba(200, 200, 200, 0.5)',
+                        borderWidth: 0
+                    };
+                } else if (dayOfWeek === 0 && currentBox) { // Sunday
+                    // End of weekend box (shift forward 12 hours)
+                    const xMax = new Date(day.getTime() + (12+4) * 60 * 60 * 1000).toISOString();
+                    currentBox.xMax = xMax;
+                    annotations.push(currentBox);
+                    currentBox = null;
+                }
+            });
+        
+            return annotations;
+        }
+        
 
         // Status-to-color map
         const statusColors = {
@@ -90,12 +148,14 @@
 
             try {
                 const response = await fetch(`/get_timeline?rt=${rtValue}`);
-                const data = await response.json();
+                const data_raw = await response.json();
 
                 // Clear old chart if it exists
                 if (timelineChart) {
                     timelineChart.destroy();
                 }
+
+                data = formatTimelineForChartjs(data_raw);
 
                 // Extract labels and build datasets
                 const labels = data.labels;
@@ -120,11 +180,35 @@
                         plugins: {
                             title: {
                                 display: true,
-                                text: data.title || `Timeline for RT ${data.rt}`
+                                text: data.title || `Timeline for RT ${data.title}`
                             },
                             legend: {
                                 display: true,
                                 position: 'top'
+                            },
+                            annotation: {
+                                display: true,
+                                annotations: generateWeekendBoxes(data.labels)
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const dataset = context.dataset;
+                                        const index = context.dataIndex;
+                                        const label = dataset.label || '';
+                                        const current = context.parsed.y;
+                                    
+                                        // Handle previous value (plain number array!)
+                                        const prev = index > 0 ? dataset.data[index - 1] : null;
+                                    
+                                        // Delta logic
+                                        const delta = prev !== null ? current - prev : null;
+                                        const sign = delta > 0 ? '+' : '';
+                                        const deltaText = delta !== null ? ` (${sign}${delta})` : '';
+                                    
+                                        return `${label}: ${current}${deltaText}`;
+                                    }
+                                }
                             }
                         },
                         scales: {

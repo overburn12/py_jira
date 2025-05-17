@@ -55,12 +55,14 @@ def format_timeline_for_chartjs(epic_data):
     # Find all possible status labels from the first day (assumes all days have same keys)
     all_statuses = timeline[labels[0]].keys()
 
+
     # Build datasets: one per status
     datasets = []
+
     for status in all_statuses:
         datasets.append({
             "label": status,
-            "data": [timeline[day][status] for day in labels]
+            "data": [len(timeline[day][status]) for day in labels]
         })
 
     return {

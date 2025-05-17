@@ -1,11 +1,8 @@
-import json, os, datetime
+import json, os, datetime, copy
 from datetime import date, datetime
 
 from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, format_timeline_for_chartjs, previous_day
 from JiraWrapper import JiraWrapper
-
-
-epic_data = load_epic_metadata() #load the global variable to hold epic metadata
 
 #-----------------------------------------------------------------------------------------------------------
 # JiraClient Class
@@ -15,17 +12,8 @@ class JiraClient(JiraWrapper):
     def __init__(self):
         super().__init__()
 
-        # Load local metadata into memory
-        self._rt_epic_data = load_epic_metadata() 
-
-        # if it doesnt exist, then grab from jira and load it
-        if self._rt_epic_data is None:
-            self.dump_all_rt_epics_metadata()
-            self._rt_epic_data = load_epic_metadata()
-
 
     def get_all_rt_epics(self):
-
         #returns json object for front-end order selection
         epic_list = []
 
@@ -46,51 +34,35 @@ class JiraClient(JiraWrapper):
         return epic_list
 
 
-    def get_task_issues_from_epic(self, epic_key, expand=None, batch_size=100, include_progress=False):
-        full_key = full_rt(epic_key)
-        jql = f'"Epic Link" = {full_key} AND issuetype = Task'
-
-        for item in self.search_issues(jql, expand=expand, batch_size=batch_size, yield_progress=include_progress):
-            # skip progress dict if you're iterating both issue + progress
-            if isinstance(item, dict): 
-                yield item
-                continue
-            if item.fields.issuetype.name.lower() != "task":
-                continue
-            yield item
-
-
     def get_repair_data_from_epic(self, epic_key):
         #filters repair status and comments for display on the front end.
         #used to get an idea of how long specific repairs take, and how long the specific repairs took
 
-        for issue in self.get_task_issues_from_epic(epic_key, expand="changelog,comment", batch_size=100, include_progress=True):
-        
-            # pass any progress update
-            if isinstance(issue, dict) and issue.get("progress_update"):
-                yield issue
-                continue
-
-            serial = issue.fields.summary 
-            rt_num = issue.key
-            board_model = getattr(issue.fields, 'customfield_10230', None)
-            raw_summary = getattr(issue.fields, 'customfield_10245', None)
+        for issue in self.load_issues_from_file(epic_key, type="task"):
+            fields = issue['fields']
+            serial = fields['summary'] 
+            rt_num = issue['key']
+            board_model = None
+            if fields.get('customfield_10230', None):
+                board_model = fields['customfield_10230']['value'] 
+            raw_summary = fields.get('customfield_10245', None)
             repair_summary = (raw_summary or 'N/A').replace("\n", "-") # remove newline chars, keep it a single line
             events = []
 
             # add the status changes to events
-            if hasattr(issue, 'changelog'):
-                for history in issue.changelog.histories:
-                    for item in history.items:
-                        if item.field == "status":
-                            timestamp = datetime.strptime(history.created[:19], "%Y-%m-%dT%H:%M:%S")
+            changelog = issue.get('changelog', None)
+            if changelog:
+                for history in changelog['histories']:
+                    for item in history['items']:
+                        if item['field'] == "status":
+                            timestamp = datetime.strptime(history['created'][:19], "%Y-%m-%dT%H:%M:%S")
                             events.append({
                                 "type": "status_change",
-                                "from": item.fromString,
-                                "to": item.toString,
+                                "from": item['fromString'],
+                                "to": item['toString'],
                                 "time": timestamp,
                                 "length": None,
-                                "author": history.author.displayName if history.author else "Unknown"
+                                "author": history.get('author', {}).get('displayName', '**')
                             })
 
             # sort events chronologically
@@ -110,14 +82,13 @@ class JiraClient(JiraWrapper):
                         event["length"] = -1  # Final status, no next one
 
             # add comments to events
-            if hasattr(issue.fields, 'comment') and hasattr(issue.fields.comment, 'comments'):
-                for comment in issue.fields.comment.comments:
-                    events.append({
-                        "type": "comment",
-                        "author": comment.author.displayName if comment.author else "Unknown",
-                        "time": datetime.strptime(comment.created[:19], "%Y-%m-%dT%H:%M:%S"),
-                        "body": comment.body
-                    })
+            for comment in fields.get('comment', {}).get('comments', {}):
+                events.append({
+                    "type": "comment",
+                    "author": comment.get('author', {}).get('displayName', '**'),
+                    "time": datetime.strptime(comment['created'][:19], "%Y-%m-%dT%H:%M:%S"),
+                    "body": comment.get('body', {})
+                })
 
             # sort events chronologically
             events.sort(key=lambda x: x["time"])
@@ -150,7 +121,7 @@ class JiraClient(JiraWrapper):
             if advanced_repair and awaiting_functional_test and not scrap:
                 yield { "serial": serial,
                         "rt_num": rt_num,
-                        "board_model": board_model.value if board_model else 'N/A',
+                        "board_model": board_model if board_model else 'N/A',
                         "repair_summary": repair_summary,
                         "events": filtered_events
                 }
@@ -230,95 +201,6 @@ class JiraClient(JiraWrapper):
             logger.error(f"Error updating board data for serial {serial}: {e}")
 
 
-    def dump_all_rt_epics_metadata(self, output_dir="jira_dumps", filename="epic-list.json"):
-        os.makedirs(output_dir, exist_ok=True)
-        epic_data = []
-        key_list = []
-
-        try:
-            jql = 'issuetype = Epic AND project = RT'
-            for item in self.search_issues(jql, paginate=True, batch_size=100):
-                if isinstance(item, dict):
-                    continue  # Skip progress updates if any
-                if item.key.startswith("RT-"):
-                    key_list.append(f"{item.key} - {item.fields.summary}")
-                    epic_data.append(item.raw)
-        except Exception as e:
-            logger.exception(f"Failed to fetch RT epics: {e}")
-            return {"error": f"Failed to fetch RT epics: {e}"}
-
-        output_path = os.path.join(output_dir, filename)
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(epic_data, f, indent=2)
-            logger.info(f"Saved {len(epic_data)} epics to {output_path}")
-        except Exception as e:
-            logger.exception(f"Failed to write epic list file: {e}")
-            return {"error": f"Failed to write epic list file: {e}"}
-
-        self._rt_epic_data = epic_data
-        return {
-            "message": f"Saved {len(epic_data)} epics to {output_path}",
-            "epic_list": key_list
-        }
-
-
-
-
-    def get_epic_summary(self, epic_key):
-        #returns the summary/title of the requested epic RT
-
-        full_key = full_rt(epic_key)
-
-        for epic in self._rt_epic_data:
-            if epic.get("key") == full_key:
-                return epic.get("fields", {}).get("summary")
-
-        return f"Epic {full_key} not found."
-
-
-
-    def dump_issues_to_files(self, epic_key, output_dir="jira_dumps"):
-        #dumps all task issues to file for a given epic
-
-        full_key = full_rt(epic_key)
-        os.makedirs(output_dir, exist_ok=True)
-
-        logger.info(f"Dumping all task issues for {full_key}...")
-
-        file_path = os.path.join(output_dir, f"{full_key}.json")
-        issue_data = []
-
-        try:
-            #collect the issues
-            for issue in self.get_task_issues_from_epic(full_key, expand="changelog,comment"):
-                issue_data.append(issue.raw)  
-
-            #dump issues to file
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(issue_data, f, indent=2, ensure_ascii=False)
-
-
-            logger.info(f"Saved {len(issue_data)} issues to {file_path}")
-        except Exception as e:
-            logger.exception(f"Failed to dump {full_key}: {e}")
-
-
-
-    def load_issues_from_file(self, epic_key, output_dir="jira_dumps"):
-        full_key = full_rt(epic_key)
-        epic_file = os.path.join(output_dir, f"{full_key}.json")
-
-        # Check for file, generate if needed
-        if not os.path.isfile(epic_file):
-            self.dump_issues_to_files(epic_key, output_dir)
-
-        try:
-            with open(epic_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.exception(f"Failed to load issue file for {full_key}: {e}")
-            return None
 
 
     def parse_status_history(self, issue_data):
@@ -407,7 +289,7 @@ class JiraClient(JiraWrapper):
         first_date = None
         last_date = None
 
-        epic_data = self.load_issues_from_file(epic_key)
+        epic_data = self.load_issues_from_file(epic_key, type="task")
 
         for hashboard in epic_data:
             update_start, update_end = self.get_max_min_hashboard_dates(hashboard)
@@ -427,7 +309,7 @@ class JiraClient(JiraWrapper):
 
 
     def simplify_hashboard_timeline(self, hashboard, start_date, end_date):
-        #takes the filtered status data for a hashboard. inserts it into a timeline.
+        #takes the filtered status data for a hashboard. inserts it into a timeline of given length
         #the last status for each day is what ends up in each day-slot
 
         #create the timeline container
@@ -439,10 +321,10 @@ class JiraClient(JiraWrapper):
         status_timeline = self.parse_status_history(hashboard)
         for update in status_timeline:
             update_day = update['start']
-            cropped_day = date(update_day.year, update_day.month, update_day.day)
+            cropped_day = date(update_day.year, update_day.month, update_day.day) #cropped because we only take the day, not the time
             timeline[cropped_day] = update['status']
         
-        #extend the states to fill blank spots where nothing happened
+        #extend the states to fill blank spots where no status changes happened
         last_status = None
         for day in timeline:
             if last_status is None:
@@ -456,54 +338,89 @@ class JiraClient(JiraWrapper):
 
     def build_and_fill_epic_timeline(self, epic_key):
         #creates a timeline container with total counts for each status for each day
-        timeline = {}
         start_date, end_date = self.get_max_min_epic_dates(epic_key)
 
         if start_date is None and end_date is None:
             logger.warning(f"No data for {epic_key}")
             return None
 
-        #build the empty timeline container
-        for day in date_range(start_date, end_date):
-        #    timeline[day] = {}
-            timeline[day] = {
-                "Backlog": 0,
-                "Awaiting Advanced Repair": 0,
-                "Advanced Repair": 0,
-                "Passed Initial Diagnosis": 0,
-                "Awaiting Functional Test": 0,
-                "Done": 0,
-                "Scrap": 0,
-                "Hashboard Replacement Program": 0,
-                "Total Boards": 0
-            }
+    # PART 1: create the empty timeline container
 
-        #load the epic file
-        epic_data = self.load_issues_from_file(epic_key)
+        status_list = ["Backlog", "Awaiting Advanced Repair", "Advanced Repair", "Passed Initial Diagnosis", 
+                       "Awaiting Functional Test", "Done", "Scrap", "Hashboard Replacement Program", "Total Boards"]
+        
+        blank_day = {}
+        for status in status_list:
+            blank_day[status] = []
+
+        timeline = {}
+        for day in date_range(start_date, end_date):
+            timeline[day] = copy.deepcopy(blank_day)
+
+    # PART 2: insert hb statuses into timeline container
+
+        epic_data = self.load_issues_from_file(epic_key, type="task")
+
+        #'backlog' and 'advance repair' left overnight should be considered an error, force them into 'awating advanced repair'
+        convert = {
+            "Advanced Repair": "Awaiting Advanced Repair",
+            "Backlog": "Awaiting Advanced Repair"
+        }
 
         #insert each hashboard timeline into the epic timeline
         for hashboard in epic_data:
+            serial = hashboard['fields']['summary']
             hb_timeline = self.simplify_hashboard_timeline(hashboard, start_date, end_date)
             for day in hb_timeline:
-                if hb_timeline[day] is not None:
-                    timeline[day][hb_timeline[day]] = timeline[day].get(hb_timeline[day], 0) + 1
-                    #timeline[day][hb_timeline[day]] += 1
-                    timeline[day]['Total Boards'] += 1
+                hb_status = hb_timeline[day]
+                if hb_status is not None:
+                    if(hb_status in convert.keys()):
+                        converted_status = convert[hb_status]
+                        timeline[day][converted_status].append(serial)
+                    else:
+                        timeline[day][hb_status].append(serial)
+                    timeline[day]['Total Boards'].append(serial)
 
-        #prune leading errors created when hasboard replacement program is used
-        new_timeline = {}
+    # PART 3: prune leading days
+        #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
+        
+        pruned_timeline = {}
         START = False
 
+        status_totals = {}
+        for status in status_list:
+            status_totals[status] = 0
+
+        #set up a trigger that filters out all leading days with very low count (less than 5)
         for day in timeline:
-            if timeline[day]['Total Boards'] > 4:
+            if len(timeline[day]['Total Boards']) > 4:
                 START = True
             if START:
-                if timeline[day]['Done'] == timeline[day]['Total Boards']:
+                if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
                     break
-                new_timeline[day] = timeline[day]
+                pruned_timeline[day] = {}
+                for hb_status in timeline[day]:
+                    pruned_timeline[day][hb_status] = timeline[day][hb_status].copy()
+                    status_totals[hb_status] += len(timeline[day][hb_status])
 
-        #jsonify cant serialize datatime as a key, so convert to iso format
-        timeline_str_keys = {day.isoformat(): data for day, data in new_timeline.items()}
+    # PART 4: remove statuses that have 0 boards on every single day, a.k.a. remove unused statuses
+
+        #find the statuses that have 0 counts in status_totals
+        zero_count_status = []
+        for status in status_totals:
+            if status_totals[status] == 0:
+                zero_count_status.append(status)
+
+        #remove statuses that have 0 action
+        filtered_timeline = {}
+        for day in pruned_timeline:
+            filtered_timeline[day] = {}
+            for hb_status in pruned_timeline[day]:
+                if hb_status not in zero_count_status:
+                    filtered_timeline[day][hb_status] = pruned_timeline[day][hb_status].copy()
+
+        #jsonify cant serialize datetime as a key, so convert to iso format (YYYY-MM-DD)
+        timeline_str_keys = {day.isoformat(): data for day, data in filtered_timeline.items()}
 
         return timeline_str_keys
 
@@ -518,9 +435,8 @@ class JiraClient(JiraWrapper):
             "title": epic_summary,
             "timeline": timeline
         }
-
-
-        return format_timeline_for_chartjs(epic_data)
+        
+        return epic_data
 
 
 
