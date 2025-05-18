@@ -40,7 +40,8 @@
             <input type="submit" value="Submit">
         </form>
         <div style="position: relative; height: 100%; width: 100%;">
-            <canvas id="timeline-chart"></canvas>
+            <canvas id="timeline-chart"></canvas><br>
+            <div id="chart-info" style="margin-top: 20px; font-weight: bold;"></div>
         </div>
     {{ block_footer() }}
 {% endblock %}
@@ -57,12 +58,12 @@
             try {
                 const response = await fetch('/get_orders');
                 const orders = await response.json();
-                rtSelect.innerHTML = '';  // Clear current options
+                rtSelect.innerHTML = '';
 
                 orders.forEach(order => {
                     const option = document.createElement('option');
                     option.value = order.rt_num;  // only RT number is sent on submit
-                    option.textContent = `${order.rt_num} - ${order.summary}`;
+                    option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
                     rtSelect.appendChild(option);
                 });
             } catch (error) {
@@ -76,18 +77,17 @@
 
         function formatTimelineForChartjs(epicData) {
             const timeline = epicData.timeline;
-            
-            // Sorted list of date labels
+
+            if (timeline === null){
+                return null;
+            }
+
             const labels = Object.keys(timeline).sort();
-        
-            // Find all possible status labels from the first day (assumes all days have same keys)
             const allStatuses = Object.keys(timeline[labels[0]]);
-        
-            // Build datasets: one per status
             const datasets = allStatuses.map(status => {
                 return {
                     "label": status,
-                    "data": labels.map(day => timeline[day][status].length)
+                    "data": labels.map(day => timeline[day][status]?.length?? null)
                 };
             });
         
@@ -98,6 +98,14 @@
             };
         }
 
+        //shift forwards or backwards on the date
+        function changeDay(day, direction) {
+            const date = new Date(day);
+            date.setDate(date.getDate() + direction);
+            return date.toISOString().split('T')[0]; // Return in 'YYYY-MM-DD'
+        }
+
+        //highlight the weekends on the chart
         function generateWeekendBoxes(dateLabels) {
             const annotations = [];
             let currentBox = null;
@@ -141,6 +149,111 @@
             "Total Boards": "black"
         };
 
+
+        //random color for statuses that dont fit status-to-color map
+        function getRandomColor() {
+            const r = Math.floor(Math.random() * 256);
+            const g = Math.floor(Math.random() * 256);
+            const b = Math.floor(Math.random() * 256);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+
+        function renderChart(data){
+
+            // Extract labels and build datasets
+            const labels = data.labels;
+            const datasets = data.datasets.map(ds => {
+                const color = statusColors[ds.label] || getRandomColor();
+                return {
+                    label: ds.label,
+                    data: ds.data,
+                    borderColor: color,
+                    backgroundColor: color,
+                    fill: false,
+                    tension: 0.1
+                };
+            });
+
+            // Build the chart
+            timelineChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: data.title || `Timeline for RT ${data.title}`
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        annotation: {
+                            display: true,
+                            annotations: generateWeekendBoxes(data.labels)
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const dataset = context.dataset;
+                                    const index = context.dataIndex;
+                                    const label = dataset.label || '';
+                                    const current = context.parsed.y;
+                                    const prev = index > 0 ? dataset.data[index - 1] : null;
+                                    const delta = prev !== null ? current - prev : null;
+                                    const sign = delta > 0 ? '+' : '';
+                                    const deltaText = delta !== null ? ` (${sign}${delta})` : '';
+
+                                    return `${label}: ${current}${deltaText}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        }
+                    }
+                }
+            });     
+        }
+
+
+        function generateSerialList(dateStr, label, yValue){
+
+            const serials = window.timeline[dateStr]?.[label];
+            if (Array.isArray(serials) && serials.length > 0) {
+                return `
+                    <strong>${label}</strong> on <strong>${dateStr}</strong> (${yValue} boards):<br>
+                    <ul>${serials.map(s => `<li>${s}</li>`).join('')}</ul>
+                `;
+            } else {
+                return `
+                    <strong>${label}</strong> on <strong>${dateStr}</strong>: No boards listed.
+                `;
+            }
+        }
+
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -150,92 +263,45 @@
                 const response = await fetch(`/get_timeline?rt=${rtValue}`);
                 const data_raw = await response.json();
 
+                window.timeline = data_raw.timeline;
+                data = formatTimelineForChartjs(data_raw);
+                
                 // Clear old chart if it exists
                 if (timelineChart) {
                     timelineChart.destroy();
                 }
 
-                data = formatTimelineForChartjs(data_raw);
+                if (data === null){
+                    alert("No data for order");
+                    return;
+                }
 
-                // Extract labels and build datasets
-                const labels = data.labels;
-                const datasets = data.datasets.map(ds => ({
-                    label: ds.label,
-                    data: ds.data,
-                    borderColor: statusColors[ds.label] || 'black',
-                    backgroundColor: statusColors[ds.label] || 'black',
-                    fill: false,
-                    tension: 0.1
-                }));
+                renderChart(data);
 
-                // Create chart
-                timelineChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: datasets
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: data.title || `Timeline for RT ${data.title}`
-                            },
-                            legend: {
-                                display: true,
-                                position: 'top'
-                            },
-                            annotation: {
-                                display: true,
-                                annotations: generateWeekendBoxes(data.labels)
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const dataset = context.dataset;
-                                        const index = context.dataIndex;
-                                        const label = dataset.label || '';
-                                        const current = context.parsed.y;
-                                    
-                                        // Handle previous value (plain number array!)
-                                        const prev = index > 0 ? dataset.data[index - 1] : null;
-                                    
-                                        // Delta logic
-                                        const delta = prev !== null ? current - prev : null;
-                                        const sign = delta > 0 ? '+' : '';
-                                        const deltaText = delta !== null ? ` (${sign}${delta})` : '';
-                                    
-                                        return `${label}: ${current}${deltaText}`;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: {
-                                type: 'time',
-                                time: {
-                                    unit: 'day'
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Date'
-                                }
-                            },
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: 'Count'
-                                }
-                            }
-                        }
-                    }
-                });
+                const infoDisplay = document.getElementById('chart-info');
+                timelineChart.options.onClick = (event, elements) => {
+                    if (!elements.length) return;
+                
+                    const point = elements[0];
+                    const datasetIndex = point.datasetIndex;
+                    const index = point.index;
+                
+                    const dataset = timelineChart.data.datasets[datasetIndex];
+
+                    const label = dataset.label;
+                    const dateStr = timelineChart.data.labels[index];
+                    const yValue = dataset.data[index];
+                    
+                    const infoDisplay = document.getElementById('chart-info');
+                    infoDisplay.innerHTML = generateSerialList(dateStr, label, yValue);
+                    
+                };
+
             } catch (error) {
                 console.error('Error fetching timeline:', error);
                 alert(`Failed to fetch timeline data: ${error.message}`);
             }
         });
+
     </script>
 {% endblock %}

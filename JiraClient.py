@@ -1,7 +1,7 @@
 import json, os, datetime, copy
 from datetime import date, datetime
 
-from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, format_timeline_for_chartjs, previous_day
+from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, previous_day
 from JiraWrapper import JiraWrapper
 
 #-----------------------------------------------------------------------------------------------------------
@@ -16,22 +16,86 @@ class JiraClient(JiraWrapper):
     def get_all_rt_epics(self):
         #returns json object for front-end order selection
         epic_list = []
+        prune_list = self.get_epic_prune_list()
+        print (prune_list)
 
         for raw_epic in self._rt_epic_data:
             try:
                 key = raw_epic.get("key", "")
+                if full_rt(key) in prune_list:
+                    continue
+
+                issue_count = self.count_issues_from_file(full_rt(key), "task")
+
                 fields = raw_epic.get("fields", {})
                 if key.startswith("RT-"):
                     created_time = datetime.strptime(fields["created"][:19], "%Y-%m-%dT%H:%M:%S")
+                    created_date = created_time.strftime("%Y-%m-%d")
                     epic_list.append({
                         "rt_num": key,
                         "summary": fields.get("summary", ""),
-                        "created": created_time
+                        "created": created_date,
+                        "issue_count": issue_count
                     })
             except Exception as e:
                 logger.warning(f"Failed to parse epic data: {e}")
 
         return epic_list
+    
+
+    def get_epic_prune_list(self, directory = 'jira_dumps', file = 'epic_prune.json'):
+        
+        # Check if the file exists
+        file_path = os.path.join(directory, file)
+        if not os.path.exists(file_path):
+            logger.exception(f"File '{file_path}' not found. Returning empty list.")
+            return []
+
+        try:
+            # Open file and load list from file
+            with open(file_path, 'r') as f:
+                prune_list = json.load(f)
+                return prune_list
+        except json.JSONDecodeError as e:
+            logger.exception(f"Error parsing JSON in '{file_path}': {e}. Returning empty list.")
+            return []
+
+
+    def add_to_epic_prune_list(self, epic_key, output_dir = 'jira_dumps'):
+
+        full_key = full_rt(epic_key)
+        # Check if the file exists
+        file_path = os.path.join(output_dir, 'epic_prune.json')
+        if not os.path.exists(file_path):
+            # If the file doesn't exist, create it with an empty list
+            with open(file_path, 'w') as f:
+                json.dump([], f)
+            prune_list = []
+        else:
+            try:
+                # Open file and load list from file
+                with open(file_path, 'r') as f:
+                    prune_list = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.exception(f"Error parsing JSON in '{file_path}': {e}.")
+                return False
+
+        # Check if the epic key is already in the list
+        if full_key in prune_list:
+            logger.info(f"Epic key '{full_key}' is already in the prune list.")
+            return False
+
+        # Add the epic key to the list
+        prune_list.append(full_key)
+
+        # Save the updated list to the file
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(prune_list, f, indent=4)
+            return True
+        except Exception as e:
+            logger.exception(f"Error saving prune list to '{file_path}': {e}.")
+            return False
 
 
     def get_repair_data_from_epic(self, epic_key):
@@ -336,95 +400,6 @@ class JiraClient(JiraWrapper):
         return timeline
 
 
-    def build_and_fill_epic_timeline(self, epic_key):
-        #creates a timeline container with total counts for each status for each day
-        start_date, end_date = self.get_max_min_epic_dates(epic_key)
-
-        if start_date is None and end_date is None:
-            logger.warning(f"No data for {epic_key}")
-            return None
-
-    # PART 1: create the empty timeline container
-
-        status_list = ["Backlog", "Awaiting Advanced Repair", "Advanced Repair", "Passed Initial Diagnosis", 
-                       "Awaiting Functional Test", "Done", "Scrap", "Hashboard Replacement Program", "Total Boards"]
-        
-        blank_day = {}
-        for status in status_list:
-            blank_day[status] = []
-
-        timeline = {}
-        for day in date_range(start_date, end_date):
-            timeline[day] = copy.deepcopy(blank_day)
-
-    # PART 2: insert hb statuses into timeline container
-
-        epic_data = self.load_issues_from_file(epic_key, type="task")
-
-        #'backlog' and 'advance repair' left overnight should be considered an error, force them into 'awating advanced repair'
-        convert = {
-            "Advanced Repair": "Awaiting Advanced Repair",
-            "Backlog": "Awaiting Advanced Repair"
-        }
-
-        #insert each hashboard timeline into the epic timeline
-        for hashboard in epic_data:
-            serial = hashboard['fields']['summary']
-            hb_timeline = self.simplify_hashboard_timeline(hashboard, start_date, end_date)
-            for day in hb_timeline:
-                hb_status = hb_timeline[day]
-                if hb_status is not None:
-                    if(hb_status in convert.keys()):
-                        converted_status = convert[hb_status]
-                        timeline[day][converted_status].append(serial)
-                    else:
-                        timeline[day][hb_status].append(serial)
-                    timeline[day]['Total Boards'].append(serial)
-
-    # PART 3: prune leading days
-        #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
-        
-        pruned_timeline = {}
-        START = False
-
-        status_totals = {}
-        for status in status_list:
-            status_totals[status] = 0
-
-        #set up a trigger that filters out all leading days with very low count (less than 5)
-        for day in timeline:
-            if len(timeline[day]['Total Boards']) > 4:
-                START = True
-            if START:
-                if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
-                    break
-                pruned_timeline[day] = {}
-                for hb_status in timeline[day]:
-                    pruned_timeline[day][hb_status] = timeline[day][hb_status].copy()
-                    status_totals[hb_status] += len(timeline[day][hb_status])
-
-    # PART 4: remove statuses that have 0 boards on every single day, a.k.a. remove unused statuses
-
-        #find the statuses that have 0 counts in status_totals
-        zero_count_status = []
-        for status in status_totals:
-            if status_totals[status] == 0:
-                zero_count_status.append(status)
-
-        #remove statuses that have 0 action
-        filtered_timeline = {}
-        for day in pruned_timeline:
-            filtered_timeline[day] = {}
-            for hb_status in pruned_timeline[day]:
-                if hb_status not in zero_count_status:
-                    filtered_timeline[day][hb_status] = pruned_timeline[day][hb_status].copy()
-
-        #jsonify cant serialize datetime as a key, so convert to iso format (YYYY-MM-DD)
-        timeline_str_keys = {day.isoformat(): data for day, data in filtered_timeline.items()}
-
-        return timeline_str_keys
-
-
     def create_epic_timeline_data(self, epic):
     #used for sending packaged data to front end
         timeline = self.build_and_fill_epic_timeline(epic)
@@ -435,14 +410,79 @@ class JiraClient(JiraWrapper):
             "title": epic_summary,
             "timeline": timeline
         }
-        
+
         return epic_data
 
 
+    def build_and_fill_epic_timeline(self, epic_key):
+            #creates a timeline container with total counts for each status for each day
+            start_date, end_date = self.get_max_min_epic_dates(epic_key)
 
+            if start_date is None and end_date is None:
+                logger.warning(f"No data for {epic_key}")
+                self.add_to_epic_prune_list(epic_key)
+                return None
 
+        # PART 1: create the empty timeline container
 
+            timeline = {}
+            for day in date_range(start_date, end_date):
+                timeline[day] = {'Total Boards': []}
+
+        # PART 2: insert hb statuses into timeline container
+
+            epic_data = self.load_issues_from_file(epic_key, type="task")
+            status_list = ['Total Boards']
+
+            # Advanced Repair overnight is an error, shift it to Awating advanced repair
+            convert_status = {
+                "Advanced Repair": "Awaiting Advanced Repair",
+                "Backlog": "Awaiting Advanced Repair"
+            }
+
+            #insert each hashboard timeline into the epic timeline
+            for hashboard in epic_data:
+                serial = hashboard['fields']['summary']
+                hb_timeline = self.simplify_hashboard_timeline(hashboard, start_date, end_date)
+
+                for day in hb_timeline:
+                    hb_status = hb_timeline[day]
+                    if hb_status is not None:
+                        if hb_status in convert_status:
+                            hb_status = convert_status[hb_status] 
+                        if hb_status not in status_list:
+                            status_list.append(hb_status)
+                        if hb_status not in timeline[day]:
+                            timeline[day][hb_status] = []
+                        timeline[day][hb_status].append(serial)
+                        timeline[day]['Total Boards'].append(serial)
+
+        # PART 3: prune leading days
+            #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
             
+            pruned_timeline = {}
+            START = False
+
+            #set up a trigger that filters out all leading days with very low count (less than 5)
+            for day in timeline:
+                if len(timeline[day]['Total Boards']) > 4:
+                    START = True
+                if START:
+                    if 'Done' in timeline[day]:
+                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
+                            break
+                    pruned_timeline[day] = {}
+                    for status in status_list:
+                        pruned_timeline[day][status] = None
+                        if status in timeline[day]:
+                            if pruned_timeline[day][status] is None:
+                                pruned_timeline[day][status] = []
+                            pruned_timeline[day][status] = timeline[day][status].copy()
+
+            #jsonify cant serialize datetime as a key, so convert to iso format (YYYY-MM-DD)
+            timeline_str_keys = {day.isoformat(): data for day, data in pruned_timeline.items()}
+
+            return timeline_str_keys
 
 
 

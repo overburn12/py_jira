@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os, time, json
 import logging
 
-from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, format_timeline_for_chartjs, previous_day
+from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, previous_day
 
 
 logging.basicConfig(
@@ -223,3 +223,34 @@ class JiraWrapper:
         except Exception as e:
             logger.exception(f"Failed to load issue file for {full_key}: {e}")
             return None
+
+
+    def count_issues_from_file(self, epic_key, type="all", output_dir="jira_dumps"):
+        valid_type = ["task", "child", "all"]
+        if type not in valid_type:
+            logger.exception(f"count_issues_from_file() Wrong issue type used: {type}")
+            return 0
+
+        full_key = full_rt(epic_key)
+        epic_file = os.path.join(output_dir, f"{full_key}.json")
+
+        # Check for file, generate if needed
+        if not os.path.isfile(epic_file):
+            return 0 #for now
+            self.dump_issues_to_files(epic_key, output_dir)
+
+        try:
+            with open(epic_file, 'r', encoding='utf-8') as f:
+                epic_data = json.load(f)
+
+                if type.lower() == "all":
+                    return len(epic_data)
+
+                return sum(
+                    1 for issue in epic_data
+                    if issue['fields']['issuetype']['name'].lower() == type.lower()
+                )
+
+        except Exception as e:
+            logger.exception(f"Failed to count issues for {full_key}: {e}")
+            return 0

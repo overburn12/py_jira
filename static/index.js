@@ -39,7 +39,7 @@ async function loadOrders() {
         orders.forEach(order => {
             const option = document.createElement('option');
             option.value = order.rt_num;  // only RT number is sent on submit
-            option.textContent = `${order.rt_num} - ${order.summary}`;
+            option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
             rtSelect.appendChild(option);
         });
     } catch (error) {

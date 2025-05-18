@@ -44,29 +44,3 @@ def full_rt(epic_key):
             return "RT-" + epic_key
         else:
             return epic_key
-        
-
-def format_timeline_for_chartjs(epic_data):
-    timeline = epic_data["timeline"]
-    
-    # Sorted list of date labels
-    labels = sorted(timeline.keys())
-
-    # Find all possible status labels from the first day (assumes all days have same keys)
-    all_statuses = timeline[labels[0]].keys()
-
-
-    # Build datasets: one per status
-    datasets = []
-
-    for status in all_statuses:
-        datasets.append({
-            "label": status,
-            "data": [len(timeline[day][status]) for day in labels]
-        })
-
-    return {
-        "labels": labels,
-        "datasets": datasets,
-        "title": epic_data['title']
-    }
