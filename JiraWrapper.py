@@ -224,7 +224,8 @@ class JiraWrapper:
 
         # Check for file, generate if needed
         if not os.path.isfile(epic_file):
-            self.dump_issues_to_files(epic_key, output_dir)
+            list(self.dump_issues_to_files(epic_key, output_dir))
+
 
         try:
             with open(epic_file, 'r', encoding='utf-8') as f:
