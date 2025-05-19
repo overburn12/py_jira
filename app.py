@@ -1,7 +1,7 @@
 from flask import Flask, flash, make_response, session, redirect, url_for, render_template, request, jsonify, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
-import os, json
+import os, json, time
 
 from JiraClient import JiraClient
 
@@ -33,6 +33,10 @@ def repair_time_page():
 def timeline_page():
     return render_template('Timeline.html')
 
+@app.route('/update', methods=['GET'])
+def update_page():
+    return render_template('updateIssues.html')
+
 #--------------------------------------------------------------------------------------
 # API Routes
 #--------------------------------------------------------------------------------------
@@ -49,9 +53,16 @@ def chip_count():
     return "OKAY!"
 
 
-@app.route('/dump_rt_data')
+@app.route('/update_issues', methods=['POST'])
 def dump_rt_data():
-    return client.dump_all_rt_epics_metadata()
+    rt_key = request.json['rt_number']
+    client.delete_issues_file(rt_key)
+    def generate_data():
+        for issue in client.dump_issues_to_files(rt_key, yield_progress=True):
+            yield json.dumps(issue, default=str) + '\n'
+        yield json.dumps({"message": "DONE!"}, default=str) + '\n'
+
+    return Response(generate_data(), mimetype='application/x-ndjson')
 
 
 @app.route('/get_orders')
@@ -76,7 +87,7 @@ def api():
         return Response(generate_data(), mimetype='application/x-ndjson')
 
     except Exception as e:
-        print(f"Error in /api: {e}")
+        print(f"Error in /get_repair_times: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 

@@ -17,7 +17,6 @@ class JiraClient(JiraWrapper):
         #returns json object for front-end order selection
         epic_list = []
         prune_list = self.get_epic_prune_list()
-        print (prune_list)
 
         for raw_epic in self._rt_epic_data:
             try:

@@ -112,11 +112,11 @@ class JiraWrapper:
             logger.warning("Max retries reached or unrecoverable error.")
 
 
-    def get_jira_issues_from_epic(self, epic_key, expand=None, batch_size=100, include_progress=False):
+    def get_jira_issues_from_epic(self, epic_key, expand=None, batch_size=100, yield_progress=False):
         full_key = full_rt(epic_key)
         jql = f'"Epic Link" = {full_key}'
 
-        for item in self.search_issues(jql, expand=expand, batch_size=batch_size, yield_progress=include_progress):
+        for item in self.search_issues(jql, expand=expand, batch_size=batch_size, yield_progress=yield_progress):
             yield item
 
 
@@ -166,7 +166,7 @@ class JiraWrapper:
 
 
 
-    def dump_issues_to_files(self, epic_key, output_dir="jira_dumps"):
+    def dump_issues_to_files(self, epic_key, output_dir="jira_dumps", yield_progress = False):
         #dumps all task issues to file for a given epic
 
         full_key = full_rt(epic_key)
@@ -179,8 +179,15 @@ class JiraWrapper:
 
         try:
             #collect the issues
-            for issue in self.get_jira_issues_from_epic(full_key, expand="changelog,comment"):
-                issue_data.append(issue.raw)  
+            if yield_progress:
+                for issue in self.get_jira_issues_from_epic(full_key, expand="changelog,comment", yield_progress=True):
+                    if isinstance(issue, dict) and issue.get("progress_update"):
+                        yield issue
+                    else:
+                        issue_data.append(issue.raw)
+            else:
+                for issue in self.get_jira_issues_from_epic(full_key, expand="changelog,comment", yield_progress=False):
+                    issue_data.append(issue.raw)  
 
             #dump issues to file
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -191,6 +198,19 @@ class JiraWrapper:
         except Exception as e:
             logger.exception(f"Failed to dump {full_key}: {e}")
 
+
+    def delete_issues_file(self, epic_key, output_dir="jira_dumps"):
+        # deletes the JSON file for the given epic if it exists
+
+        full_key = full_rt(epic_key)
+        file_path = os.path.join(output_dir, f"{full_key}.json")
+
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"Deleted file {file_path}")
+        except Exception as e:
+            logger.exception(f"Failed to delete {file_path}: {e}")
 
 
     def load_issues_from_file(self, epic_key, type="all", output_dir="jira_dumps"):
@@ -236,8 +256,7 @@ class JiraWrapper:
 
         # Check for file, generate if needed
         if not os.path.isfile(epic_file):
-            return 0 #for now
-            self.dump_issues_to_files(epic_key, output_dir)
+            return 'Unavailable'
 
         try:
             with open(epic_file, 'r', encoding='utf-8') as f:
