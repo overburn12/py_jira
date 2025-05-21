@@ -1,28 +1,58 @@
-const form = document.getElementById('rt-form');
-const rtSelect = document.getElementById('rt_number');
+//const rtSelect = document.getElementById('rt_number');
+//const form = document.getElementById('rt-form');
 const ctx = document.getElementById('timeline-chart').getContext('2d');
 let timelineChart = null;
 
-// Fetch orders and populate dropdown
-async function loadOrders() {
+document.getElementById('load-button').addEventListener('click', async () => {
+    const rtValue = rtSelect.value;;
+
     try {
-        const response = await fetch('/get_orders');
-        const orders = await response.json();
-        rtSelect.innerHTML = '';
+        const response = await fetch(`/get_timeline?rt=${rtValue}`);
+        const data_raw = await response.json();
 
-        orders.forEach(order => {
-            const option = document.createElement('option');
-            option.value = order.rt_num;  // only RT number is sent on submit
-            option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
-            rtSelect.appendChild(option);
-        });
+        window.timeline = data_raw.timeline;
+        data = formatTimelineForChartjs(data_raw);
+        
+        // Clear old chart if it exists
+        if (timelineChart) {
+            timelineChart.destroy();
+        }
+
+        if (data === null){
+            alert("No data for order");
+            return;
+        }
+
+        renderChart(data);
+
+        //const infoDisplay = document.getElementById('chart-info');
+
+        timelineChart.options.onClick = (event, elements) => {
+            if (!elements.length) return;
+        
+            const point = elements[0];
+            const datasetIndex = point.datasetIndex;
+            const index = point.index;
+        
+            const dataset = timelineChart.data.datasets[datasetIndex];
+
+            const label = dataset.label;
+            const dateStr = timelineChart.data.labels[index];
+            const yValue = dataset.data[index];
+            
+            const infoDisplay = document.getElementById('chart-info');
+
+            infoDisplay.innerHTML = `<center><h2>${label}</h2></center>`;
+            infoDisplay.append(generateSerialList(dateStr, label, yValue));
+            
+        };
+
     } catch (error) {
-        console.error('Failed to load orders:', error);
-        rtSelect.innerHTML = '<option value="">Failed to load</option>';
+        console.error('Error fetching timeline:', error);
+        alert(`Failed to fetch timeline data: ${error.message}`);
     }
-}
 
-loadOrders(); // load when page loads
+});
 
 
 function formatTimelineForChartjs(epicData) {
@@ -258,54 +288,4 @@ function generateSerialList(dateStr, label) {
 }
 
 
-form.addEventListener('submit', async (e) => {
-    e.preventDefault();
 
-    const rtValue = rtSelect.value;
-
-    try {
-        const response = await fetch(`/get_timeline?rt=${rtValue}`);
-        const data_raw = await response.json();
-
-        window.timeline = data_raw.timeline;
-        data = formatTimelineForChartjs(data_raw);
-        
-        // Clear old chart if it exists
-        if (timelineChart) {
-            timelineChart.destroy();
-        }
-
-        if (data === null){
-            alert("No data for order");
-            return;
-        }
-
-        renderChart(data);
-
-        //const infoDisplay = document.getElementById('chart-info');
-
-        timelineChart.options.onClick = (event, elements) => {
-            if (!elements.length) return;
-        
-            const point = elements[0];
-            const datasetIndex = point.datasetIndex;
-            const index = point.index;
-        
-            const dataset = timelineChart.data.datasets[datasetIndex];
-
-            const label = dataset.label;
-            const dateStr = timelineChart.data.labels[index];
-            const yValue = dataset.data[index];
-            
-            const infoDisplay = document.getElementById('chart-info');
-
-            infoDisplay.innerHTML = `<center><h2>${label}</h2></center>`;
-            infoDisplay.append(generateSerialList(dateStr, label, yValue));
-            
-        };
-
-    } catch (error) {
-        console.error('Error fetching timeline:', error);
-        alert(`Failed to fetch timeline data: ${error.message}`);
-    }
-});

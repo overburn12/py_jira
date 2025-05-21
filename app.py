@@ -20,7 +20,7 @@ client = JiraClient()
 #--------------------------------------------------------------------------------------
 
 @app.route('/', methods=['GET'])
-def render_menu():
+def index():
     return render_template('menu.html')
 
 
@@ -33,9 +33,6 @@ def repair_time_page():
 def timeline_page():
     return render_template('Timeline.html')
 
-@app.route('/update', methods=['GET'])
-def update_page():
-    return render_template('updateIssues.html')
 
 #--------------------------------------------------------------------------------------
 # API Routes

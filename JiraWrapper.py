@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os, time, json
 import logging
 
-from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, previous_day
+from helper import logger, load_epic_metadata, full_rt
 
 
 logging.basicConfig(
