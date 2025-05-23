@@ -189,154 +189,64 @@ class JiraClient(JiraWrapper):
             logger.error(f"Error updating board data for serial {serial}: {e}")
 
 
-
-
-    def parse_status_history(self, issue):
-        #I THINK THIS CAN BE DELETED
-
-        #parses status history changes, for populating a timeline
-
-        events = []
-
-        # Extract status change events from changelog
-        for status_change in issue.status_history:
-            events.append({
-                "from": status_change.from_status,
-                "to": status_change.to_status,
-                "time": status_change.timestamp
-            })
-
-        # Sort the events by time just in case
-        events.sort(key=lambda e: e["time"])
-
-        # If there are no events, assume it's been in one status since creation
-        if not events:
-            print("FFFFFUUUUUUUCCCCCCKKKKKKK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
-            return [{
-                "status": "Backlog",
-                "start": issue.created,
-                "end": None
-            }]
-
-        # Build timeline from events
-        timeline = []
-        previous_status = events[0]["from"]
-        previous_time = issue.created
-
-        for event in events:
-            timeline.append({
-                "status": previous_status,
-                "start": previous_time,
-                "end": event["time"]
-            })
-            previous_status = event["to"]
-            previous_time = event["time"]
-
-        # Add the final status with no end (means it's current)
-        timeline.append({
-            "status": previous_status,
-            "start": previous_time,
-            "end": None
-        })
-
-        return timeline
-
-
-#-----------------------------------------------------------------------------------------------------------
-# Max/Min Dates Functions
-#-----------------------------------------------------------------------------------------------------------
-
-
-    def get_max_min_hashboard_dates(self, hashboard):
-        #get first and last day for a single hashboard
-
-        first_date = None
-        last_date = None
-
-        status_timeline = self.parse_status_history(hashboard)
-
-        for update in status_timeline:
-            update_start = update['start']
-            update_end = update.get('end')  # Use get() to avoid KeyError
-
-            if first_date is None or update_start < first_date:
-                first_date = update_start
-            if update_end is not None and (last_date is None or update_end > last_date):
-                last_date = update_end
-
-        return first_date, last_date
-
-
-    def get_max_min_epic_dates(self, epic_key):
-        #get first and last day of all hashboards within a single epic
-
-        first_date = None
-        last_date = None
-
-        issues = self.epics[epic_key].issues
-
-        for issue in issues:
-            if issue.issue_type != "Task":
-                continue
-
-            update_start, update_end = self.get_max_min_hashboard_dates(issue)
-
-            if first_date is None or update_start < first_date:
-                first_date = update_start
-            if update_end is not None and (last_date is None or update_end > last_date):
-                last_date = update_end
-        
-        return first_date, last_date
-
-
-
 #-----------------------------------------------------------------------------------------------------------
 # Timeline Functions
 #-----------------------------------------------------------------------------------------------------------
 
+    def get_max_min_epic_dates(self, epic_key):
+        issues = [
+            issue for issue in self.epics[epic_key].issues
+            if issue.issue_type == "Task"
+        ]
+
+        if not issues:
+            return None, None
+
+        first_date = min(issue.created for issue in issues)
+
+        last_dates = [
+            issue.status_history[-1].timestamp
+            for issue in issues
+            if issue.status_history
+        ]
+
+        last_date = max(last_dates) if last_dates else None
+
+        return first_date, last_date
+
+
 
     def simplify_hashboard_timeline(self, hashboard, start_date, end_date):
-        #takes the filtered status data for a hashboard. inserts it into a timeline of given length
-        #the last status for each day is what ends up in each day-slot
+        # Build blank timeline
+        timeline = {day: None for day in date_range(start_date, end_date)}
 
-        #create the timeline container
-        timeline = {}
-        for day in date_range(start_date, end_date):
-            timeline[day] = None
-        
-        #insert the start days (status_timeline is chronological so each slot ends up with the last state of the day)
-        status_timeline = self.parse_status_history(hashboard)
-        for update in status_timeline:
-            update_day = update['start']
-            cropped_day = date(update_day.year, update_day.month, update_day.day) #cropped because we only take the day, not the time
-            timeline[cropped_day] = update['status']
-        
-        #extend the states to fill blank spots where no status changes happened
+        # Insert status change events into timeline
+        for change in hashboard.status_history:
+            change_day = change.timestamp.date()
+            timeline[change_day] = change.to_status
+
+        # Fill in missing days by carrying forward the last known status
         last_status = None
-        for day in timeline:
-            if last_status is None:
-                last_status = timeline[day]
+        for day in sorted(timeline):
             if timeline[day] is None:
                 timeline[day] = last_status
-            last_status = timeline[day]
+            else:
+                last_status = timeline[day]
 
         return timeline
 
 
-    def create_epic_timeline_data(self, epic):
+    def create_epic_timeline_data(self, epic_key):
     #used for sending packaged data to front end
 
-        if self.epics[epic].issues is None: #this needs work, doesnt work right
-            for _ in self.dump_issues_to_files(epic_key=epic):
+        if self.epics[epic_key].issues is None: #this needs work, doesnt work right
+            for _ in self.dump_issues_to_files(epic_key): #supposed to auto download the jira issues if they are missing
                 pass
 
-        timeline = self.build_and_fill_epic_timeline(epic)
-        epic_summary = self.epics[epic].title
-
         epic_data = {
-            "rt": epic,
-            "title": epic_summary,
-            "timeline": timeline
+            "rt": epic_key,
+            "title": self.epics[epic_key].title,
+            "timeline": self.build_and_fill_epic_timeline(epic_key)
         }
 
         return epic_data
@@ -361,7 +271,7 @@ class JiraClient(JiraWrapper):
             issues = self.epics[epic_key].issues
             status_list = ['Total Boards']
 
-            # Advanced Repair overnight is an error, shift it to Awating advanced repair
+            # Advanced Repair or Backlog overnight is an error, shift it to Awating advanced repair
             convert_status = {
                 "Advanced Repair": "Awaiting Advanced Repair",
                 "Backlog": "Awaiting Advanced Repair"
