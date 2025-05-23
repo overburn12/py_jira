@@ -1,5 +1,5 @@
-import logging, os, json
-from datetime import date, timedelta, datetime
+import logging
+from datetime import date, timedelta
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,10 +17,6 @@ def date_range(start_date, end_date):
     while current_date <= end_date:
         yield current_date
         current_date += timedelta(days=1)
-
-
-def previous_day(date_obj, day_delta = 1):
-    return date_obj - timedelta(days=day_delta)
 
 
 def full_rt(epic_key):

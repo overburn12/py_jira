@@ -2,18 +2,11 @@ from jira import JIRA
 from jira.exceptions import JIRAError
 from datetime import datetime
 from dotenv import load_dotenv
-import os, time, json, logging
+import os, time, json
 
 from helper import logger, full_rt
-from issueWrapper import IssueComment, StatusChange, JiraIssue, Epic
+from issueWrapper import Epic
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 
