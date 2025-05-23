@@ -1,7 +1,7 @@
 import json, os, datetime, copy
 from datetime import date, datetime
 
-from helper import logger, date_range, get_initials, full_rt, previous_day
+from helper import logger, date_range
 from JiraWrapper import JiraWrapper
 
 #-----------------------------------------------------------------------------------------------------------
