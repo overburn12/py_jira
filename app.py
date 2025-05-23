@@ -53,9 +53,8 @@ def chip_count():
 @app.route('/update_issues', methods=['POST'])
 def dump_rt_data():
     rt_key = request.json['rt_number']
-    client.delete_issues_file(rt_key)
     def generate_data():
-        for issue in client.dump_issues_to_files(rt_key, yield_progress=True):
+        for issue in client.dump_issues_to_files(rt_key):
             yield json.dumps(issue, default=str) + '\n'
         yield json.dumps({"message": "DONE!"}, default=str) + '\n'
 

@@ -29,14 +29,7 @@ def get_initials(input_string):
     return ''.join(initials)
 
 
-def load_epic_metadata(input_dir="jira_dumps", filename="epic-list.json"):
-    input_path = os.path.join(input_dir, filename)
 
-    try:
-        with open(input_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        return None
     
 
 def full_rt(epic_key):

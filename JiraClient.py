@@ -1,7 +1,7 @@
 import json, os, datetime, copy
 from datetime import date, datetime
 
-from helper import logger, load_epic_metadata, date_range, get_initials, full_rt, previous_day
+from helper import logger, date_range, get_initials, full_rt, previous_day
 from JiraWrapper import JiraWrapper
 
 #-----------------------------------------------------------------------------------------------------------
@@ -16,117 +16,42 @@ class JiraClient(JiraWrapper):
     def get_all_rt_epics(self):
         #returns json object for front-end order selection
         epic_list = []
-        prune_list = self.get_epic_prune_list()
 
-        for raw_epic in self._rt_epic_data:
-            try:
-                key = raw_epic.get("key", "")
-                if full_rt(key) in prune_list:
-                    continue
-
-                issue_count = self.count_issues_from_file(full_rt(key), "task")
-
-                fields = raw_epic.get("fields", {})
-                if key.startswith("RT-"):
-                    created_time = datetime.strptime(fields["created"][:19], "%Y-%m-%dT%H:%M:%S")
-                    created_date = created_time.strftime("%Y-%m-%d")
-                    epic_list.append({
-                        "rt_num": key,
-                        "summary": fields.get("summary", ""),
-                        "created": created_date,
-                        "issue_count": issue_count
-                    })
-            except Exception as e:
-                logger.warning(f"Failed to parse epic data: {e}")
+        for epic_key in self.epics:
+            epic = self.epics[epic_key]
+            issue_count = len(epic.issues)
+            epic_list.append({
+                "rt_num": epic.key,
+                "summary": epic.title,
+                "created": epic.start_date,
+                "issue_count": issue_count
+            })
 
         return epic_list
-    
-
-    def get_epic_prune_list(self, directory = 'jira_dumps', file = 'epic_prune.json'):
-        
-        # Check if the file exists
-        file_path = os.path.join(directory, file)
-        if not os.path.exists(file_path):
-            logger.exception(f"File '{file_path}' not found. Returning empty list.")
-            return []
-
-        try:
-            # Open file and load list from file
-            with open(file_path, 'r') as f:
-                prune_list = json.load(f)
-                return prune_list
-        except json.JSONDecodeError as e:
-            logger.exception(f"Error parsing JSON in '{file_path}': {e}. Returning empty list.")
-            return []
-
-
-    def add_to_epic_prune_list(self, epic_key, output_dir = 'jira_dumps'):
-
-        full_key = full_rt(epic_key)
-        # Check if the file exists
-        file_path = os.path.join(output_dir, 'epic_prune.json')
-        if not os.path.exists(file_path):
-            # If the file doesn't exist, create it with an empty list
-            with open(file_path, 'w') as f:
-                json.dump([], f)
-            prune_list = []
-        else:
-            try:
-                # Open file and load list from file
-                with open(file_path, 'r') as f:
-                    prune_list = json.load(f)
-            except json.JSONDecodeError as e:
-                logger.exception(f"Error parsing JSON in '{file_path}': {e}.")
-                return False
-
-        # Check if the epic key is already in the list
-        if full_key in prune_list:
-            logger.info(f"Epic key '{full_key}' is already in the prune list.")
-            return False
-
-        # Add the epic key to the list
-        prune_list.append(full_key)
-
-        # Save the updated list to the file
-        try:
-            with open(file_path, 'w') as f:
-                json.dump(prune_list, f, indent=4)
-            return True
-        except Exception as e:
-            logger.exception(f"Error saving prune list to '{file_path}': {e}.")
-            return False
 
 
     def get_repair_data_from_epic(self, epic_key):
         #filters repair status and comments for display on the front end.
         #used to get an idea of how long specific repairs take, and how long the specific repairs took
 
-        for issue in self.load_issues_from_file(epic_key, type="task"):
-            fields = issue['fields']
-            serial = fields['summary'] 
-            rt_num = issue['key']
-            board_model = None
-            if fields.get('customfield_10230', None):
-                board_model = fields['customfield_10230']['value'] 
-            raw_summary = fields.get('customfield_10245', None)
-            repair_summary = (raw_summary or 'N/A').replace("\n", "-") # remove newline chars, keep it a single line
+        issues = self.epics[epic_key].issues
+
+        for issue in issues:
+            if issue.issue_type != 'Task':
+                continue
+
             events = []
 
             # add the status changes to events
-            changelog = issue.get('changelog', None)
-            if changelog:
-                for history in changelog['histories']:
-                    for item in history['items']:
-                        if item['field'] == "status":
-                            timestamp = datetime.strptime(history['created'][:19], "%Y-%m-%dT%H:%M:%S")
-                            events.append({
-                                "type": "status_change",
-                                "from": item['fromString'],
-                                "to": item['toString'],
-                                "time": timestamp,
-                                "length": None,
-                                "author": history.get('author', {}).get('displayName', '**')
-                            })
+            for status_change in issue.status_history:
+                events.append({
+                    "type": "status_change",
+                    "from": status_change.from_status,
+                    "to": status_change.to_status,
+                    "time": status_change.timestamp,
+                    "length": None,
+                    "author": status_change.author
+                })
 
             # sort events chronologically
             events.sort(key=lambda x: x["time"])
@@ -145,12 +70,12 @@ class JiraClient(JiraWrapper):
                         event["length"] = -1  # Final status, no next one
 
             # add comments to events
-            for comment in fields.get('comment', {}).get('comments', {}):
+            for comment in issue.comments:
                 events.append({
                     "type": "comment",
-                    "author": comment.get('author', {}).get('displayName', '**'),
-                    "time": datetime.strptime(comment['created'][:19], "%Y-%m-%dT%H:%M:%S"),
-                    "body": comment.get('body', {})
+                    "author": comment.author,
+                    "time": comment.timestamp,
+                    "body": comment.body
                 })
 
             # sort events chronologically
@@ -182,10 +107,10 @@ class JiraClient(JiraWrapper):
 
 
             if advanced_repair and awaiting_functional_test and not scrap:
-                yield { "serial": serial,
-                        "rt_num": rt_num,
-                        "board_model": board_model if board_model else 'N/A',
-                        "repair_summary": repair_summary,
+                yield { "serial": issue.serial,
+                        "rt_num": issue.key,
+                        "board_model": issue.board_model if issue.board_model else 'N/A',
+                        "repair_summary": issue.repair_summary.replace('\n', '-') if issue.repair_summary else 'N/A',
                         "events": filtered_events
                 }
 
@@ -266,41 +191,37 @@ class JiraClient(JiraWrapper):
 
 
 
-    def parse_status_history(self, issue_data):
+    def parse_status_history(self, issue):
+        #I THINK THIS CAN BE DELETED
+
         #parses status history changes, for populating a timeline
 
         events = []
 
-        # Grab creation time as the first known time
-        created_time = datetime.strptime(issue_data["fields"]["created"][:19], "%Y-%m-%dT%H:%M:%S")
-
         # Extract status change events from changelog
-        if "changelog" in issue_data and "histories" in issue_data["changelog"]:
-            for history in issue_data["changelog"]["histories"]:
-                for item in history.get("items", []):
-                    if item.get("field") == "status":
-                        change_time = datetime.strptime(history["created"][:19], "%Y-%m-%dT%H:%M:%S")
-                        events.append({
-                            "from": item.get("fromString"),
-                            "to": item.get("toString"),
-                            "time": change_time
-                        })
+        for status_change in issue.status_history:
+            events.append({
+                "from": status_change.from_status,
+                "to": status_change.to_status,
+                "time": status_change.timestamp
+            })
 
         # Sort the events by time just in case
         events.sort(key=lambda e: e["time"])
 
         # If there are no events, assume it's been in one status since creation
         if not events:
+            print("FFFFFUUUUUUUCCCCCCKKKKKKK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
             return [{
-                "status": issue_data["fields"]["status"]["name"],
-                "start": created_time,
+                "status": "Backlog",
+                "start": issue.created,
                 "end": None
             }]
 
         # Build timeline from events
         timeline = []
-        previous_status = events[0]["from"] or issue_data["fields"]["status"]["name"]
-        previous_time = created_time
+        previous_status = events[0]["from"]
+        previous_time = issue.created
 
         for event in events:
             timeline.append({
@@ -352,10 +273,13 @@ class JiraClient(JiraWrapper):
         first_date = None
         last_date = None
 
-        epic_data = self.load_issues_from_file(epic_key, type="task")
+        issues = self.epics[epic_key].issues
 
-        for hashboard in epic_data:
-            update_start, update_end = self.get_max_min_hashboard_dates(hashboard)
+        for issue in issues:
+            if issue.issue_type != "Task":
+                continue
+
+            update_start, update_end = self.get_max_min_hashboard_dates(issue)
 
             if first_date is None or update_start < first_date:
                 first_date = update_start
@@ -401,8 +325,13 @@ class JiraClient(JiraWrapper):
 
     def create_epic_timeline_data(self, epic):
     #used for sending packaged data to front end
+
+        if self.epics[epic].issues is None: #this needs work, doesnt work right
+            for _ in self.dump_issues_to_files(epic_key=epic):
+                pass
+
         timeline = self.build_and_fill_epic_timeline(epic)
-        epic_summary = self.get_epic_summary(epic)
+        epic_summary = self.epics[epic].title
 
         epic_data = {
             "rt": epic,
@@ -419,7 +348,6 @@ class JiraClient(JiraWrapper):
 
             if start_date is None and end_date is None:
                 logger.warning(f"No data for {epic_key}")
-                self.add_to_epic_prune_list(epic_key)
                 return None
 
         # PART 1: create the empty timeline container
@@ -430,7 +358,7 @@ class JiraClient(JiraWrapper):
 
         # PART 2: insert hb statuses into timeline container
 
-            epic_data = self.load_issues_from_file(epic_key, type="task")
+            issues = self.epics[epic_key].issues
             status_list = ['Total Boards']
 
             # Advanced Repair overnight is an error, shift it to Awating advanced repair
@@ -440,9 +368,11 @@ class JiraClient(JiraWrapper):
             }
 
             #insert each hashboard timeline into the epic timeline
-            for hashboard in epic_data:
-                serial = hashboard['fields']['summary']
-                hb_timeline = self.simplify_hashboard_timeline(hashboard, start_date, end_date)
+            for issue in issues:
+                if issue.issue_type != "Task":
+                    continue
+
+                hb_timeline = self.simplify_hashboard_timeline(issue, start_date, end_date)
 
                 for day in hb_timeline:
                     hb_status = hb_timeline[day]
@@ -453,8 +383,8 @@ class JiraClient(JiraWrapper):
                             status_list.append(hb_status)
                         if hb_status not in timeline[day]:
                             timeline[day][hb_status] = []
-                        timeline[day][hb_status].append(serial)
-                        timeline[day]['Total Boards'].append(serial)
+                        timeline[day][hb_status].append(issue.serial)
+                        timeline[day]['Total Boards'].append(issue.serial)
 
         # PART 3: prune leading days
             #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
