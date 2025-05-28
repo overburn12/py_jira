@@ -51,15 +51,19 @@
             </select>
             <button type="button" id="load-button">Load Order</button>
             <button type="button" id="update-button">Update Order</button>
+            <input type="radio" id="option1" name="radio-group" value="Totals" checked>
+            <label for="option1">Totals</label>
+            <input type="radio" id="option2" name="radio-group" value="Changes">
+            <label for="option2">Changes</label>
         </form>
         <div style="position: relative; height: 100%; width: 100%;">
             <canvas id="timeline-chart"></canvas><br>
-            <div id="chart-info" style="margin-top: 20px;"></div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
             <progress id="progressBar" value="0" max="1" style="width: 100%; display: none;"></progress>
             <span id="progressLabel" style="font-size: 12px; display: none;"></span>
         </div>
+        <div id="chart-info" style="margin-top: 20px;"></div>
         <textarea id="response" readonly style="display: none;"></textarea>
     {{ block_footer() }}
 {% endblock %}

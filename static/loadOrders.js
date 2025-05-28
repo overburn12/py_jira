@@ -14,7 +14,7 @@ const rtSelect = document.getElementById('rt_number');
 // Fetch orders and populate dropdown
 async function loadOrders() {
     try {
-        const response = await fetch('/get_orders');
+        const response = await fetch('/api/get_orders');
         const orders = await response.json();
         rtSelect.innerHTML = '';
         
@@ -50,7 +50,7 @@ document.getElementById('update-button').addEventListener('click', async () => {
     textArea = document.getElementById('response');
     textArea.value = '';
 
-    const response = await fetch('/update_issues', {
+    const response = await fetch('/api/update_issues', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

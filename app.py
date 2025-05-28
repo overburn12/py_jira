@@ -33,14 +33,18 @@ def repair_time_page():
 def timeline_page():
     return render_template('Timeline.html')
 
+@app.route('/test', methods=['GET'])
+def test_page():
+    return render_template('testOutput.html')
+
 
 #--------------------------------------------------------------------------------------
 # API Routes
 #--------------------------------------------------------------------------------------
 
 
-@app.route('/chip_count', methods=['POST'])
-def chip_count():
+@app.route('/api/chip_count', methods=['POST'])
+def api_chip_count():
     data = request.json
     board_chip_count = data['chip_count']
     board_serial = data['serial']
@@ -50,8 +54,8 @@ def chip_count():
     return "OKAY!"
 
 
-@app.route('/update_issues', methods=['POST'])
-def dump_rt_data():
+@app.route('/api/update_issues', methods=['POST'])
+def api_update_issues():
     rt_key = request.json['rt_number']
     def generate_data():
         for issue in client.dump_issues_to_files(rt_key):
@@ -61,8 +65,8 @@ def dump_rt_data():
     return Response(generate_data(), mimetype='application/x-ndjson')
 
 
-@app.route('/get_orders')
-def get_orders():
+@app.route('/api/get_orders')
+def api_get_orders():
     try:
         epic_list = client.get_all_rt_epics()
         return jsonify(epic_list)
@@ -71,8 +75,8 @@ def get_orders():
         return jsonify({"error": "Internal server error"}), 500
     
 
-@app.route('/get_repair_times', methods=['POST'])
-def api():
+@app.route('/api/get_repair_times', methods=['POST'])
+def api_get_repair_times():
     try:
         rt_number = request.json['rt_number']
 
@@ -87,8 +91,35 @@ def api():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@app.route('/update_board', methods=['POST'])
-def update_board():
+@app.route('/api/get_all_issue_summaries', methods=['POST'])
+def api_get_all_issue_summaries():
+    try:
+        rt_number = request.json['rt_number']
+
+        def generate_data():
+            for filtered_hb in client.get_issue_summary_from_epic(rt_number):
+                yield json.dumps(filtered_hb, default=str) + '\n'
+
+        return Response(generate_data(), mimetype='application/x-ndjson')
+
+    except Exception as e:
+        print(f"Error in /get_repair_times: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+    
+
+@app.route('/api/get_issue_summary', methods=['POST'])
+def api_get_issue_summary():
+    try:
+        data = request.get_json()
+        epic_key = data['epic-key']
+        serial = data['serial']
+        return client.create_issue_summary_by_serial_from_epic(serial, epic_key)
+    except Exception as e:
+        return jsonify({"error": "Internal server error"})
+
+
+@app.route('/api/update_board', methods=['POST'])
+def api_update_board():
     try:
         board_data = request.json
         if not board_data:
@@ -103,8 +134,8 @@ def update_board():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@app.route('/get_timeline', methods=['GET'])
-def get_timeline():
+@app.route('/api/get_timeline', methods=['GET'])
+def api_get_timeline():
     rt_key = str(request.args.get('rt'))
     if not rt_key:
         return jsonify({'error': 'RT number is required'}), 400
@@ -115,6 +146,17 @@ def get_timeline():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
+
+@app.route('/api/get_total_epic', methods=['POST'])
+def api_get_total_epic():
+    try:
+        data = request.get_json()
+        epic_key = data['epic_key']
+
+        return jsonify(client.get_total_epic(epic_key))
+    except Exception as e:
+        return jsonify({'error': 'error in get_total_epic'})
+
 
 #--------------------------------------------------------------------------------------
 

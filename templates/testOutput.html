@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Test Page
+{% endblock %}
+
+{% block head %}
+    <style>
+        .element-block {
+            width: 1000px;
+        }
+        #response {
+            width: 100%;
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 14px;
+            font-family: monospace;
+            resize: none;
+            box-sizing: border-box;
+            white-space: pre; 
+            overflow-x: auto; 
+            overflow-y: auto;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+{{ block_header('Test Page') }}
+        <form id="rt-form">
+            <label for="rt_number">Select RT Number:</label>
+            <select id="rt_number" name="rt_number">
+                <option value="">Loading...</option>
+            </select>
+            <input type="button" id="update-button" value="Submit">
+        </form>
+        <div style="position: relative; height: 100%; width: 100%;">
+            <canvas id="timeline-chart"></canvas><br>
+        </div>
+        <textarea id="response" style="height: 500px;"></textarea><br>
+    {{ block_footer() }}
+{% endblock %}
+
+{% block script %}
+    <script src="/static/epic.js"></script>
+{% endblock %}
+
