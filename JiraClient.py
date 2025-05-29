@@ -369,6 +369,9 @@ class JiraClient(JiraWrapper):
                 logger.warning(f"No data for {epic_key}")
                 return None
 
+            #override
+            start_date = self.epics[epic_key].start_date.date()
+
         # PART 1: create the empty timeline container
 
             timeline = {}
@@ -394,21 +397,24 @@ class JiraClient(JiraWrapper):
                 hb_timeline = self.simplify_issue_timeline(issue, start_date, end_date)
 
                 for day in hb_timeline:
+                    if day not in timeline:
+                        continue
                     hb_status = hb_timeline[day]
+                    hb_obj = {"serial": issue.serial, 'assignee': issue.assignee}
                     if hb_status is not None:
                         if hb_status in total_good:
-                            timeline[day]['Total Good'].append(issue.serial)
-                            timeline[day]['Total Processed'].append(issue.serial)
+                            timeline[day]['Total Good'].append(hb_obj)
+                            timeline[day]['Total Processed'].append(hb_obj)
                         if hb_status in 'Scrap':
-                            timeline[day]['Total Processed'].append(issue.serial)
+                            timeline[day]['Total Processed'].append(hb_obj)
                         if hb_status in convert_status:
                             hb_status = convert_status[hb_status] 
                         if hb_status not in status_list:
                             status_list.append(hb_status)
                         if hb_status not in timeline[day]:
                             timeline[day][hb_status] = []
-                        timeline[day][hb_status].append(issue.serial)
-                    timeline[day]['Total Boards'].append(issue.serial)
+                        timeline[day][hb_status].append(hb_obj)
+                    timeline[day]['Total Boards'].append(hb_obj)
 
         # PART 3: insert chassis status into the timeline
             issues = self.epics[epic_key].stories
@@ -418,13 +424,14 @@ class JiraClient(JiraWrapper):
 
                 for day in chassis_timeline:
                     chassis_status = chassis_timeline[day]
+                    hb_obj = {"serial": issue.serial, "assignee": issue.assignee}
                     if chassis_status is not None:
                         if chassis_status not in status_list:
                             status_list.append(chassis_status)
                         if chassis_status not in timeline[day]:
                             timeline[day][chassis_status] = []
-                        timeline[day][chassis_status].append(issue.serial)
-                    timeline[day]['Total Chassis'].append(issue.serial)
+                        timeline[day][chassis_status].append(hb_obj)
+                    timeline[day]['Total Chassis'].append(hb_obj)
 
 
         # PART 4: prune leading days

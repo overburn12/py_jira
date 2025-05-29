@@ -123,27 +123,43 @@ function changeDay(day, direction) {
     return date.toISOString().split('T')[0]; // Return in 'YYYY-MM-DD'
 }
 
-//highlight the weekends on the chart
+
 function generateWeekendBoxes(dateLabels) {
     const annotations = [];
+    const holidayList = ['2025-05-26'];
+    const holidaySet = new Set(holidayList); // for fast lookup
     let currentBox = null;
 
     dateLabels.forEach((dateStr, idx) => {
         const day = new Date(dateStr);
+        const isoDate = day.toISOString().split('T')[0]; // YYYY-MM-DD
         const dayOfWeek = day.getUTCDay(); // Sunday=0, Saturday=6
 
         if (dayOfWeek === 6) { // Saturday
-            // Start of weekend box (shift back 12 hours)
-            const xMin = new Date(day.getTime() - (12-4) * 60 * 60 * 1000).toISOString();
+            // Look back to Friday
+            const friday = new Date(day);
+            friday.setUTCDate(day.getUTCDate() - 1);
+            const isFridayHoliday = holidaySet.has(friday.toISOString().split('T')[0]);
+
+            // Start weekend box: either normal Sat, or extend to Friday if holiday
+            const shiftHours = isFridayHoliday ? 36 : 12;
+            const xMin = new Date(day.getTime() - (shiftHours - 4) * 60 * 60 * 1000).toISOString();
             currentBox = {
                 type: 'box',
-                xMin: xMin,
+                xMin,
                 backgroundColor: 'rgba(200, 200, 200, 0.5)',
                 borderWidth: 0
             };
+
         } else if (dayOfWeek === 0 && currentBox) { // Sunday
-            // End of weekend box (shift forward 12 hours)
-            const xMax = new Date(day.getTime() + (12+4) * 60 * 60 * 1000).toISOString();
+            // Look ahead to Monday
+            const monday = new Date(day);
+            monday.setUTCDate(day.getUTCDate() + 1);
+            const isMondayHoliday = holidaySet.has(monday.toISOString().split('T')[0]);
+
+            // End of weekend box
+            const shiftHours = isMondayHoliday ? 36 : 12;
+            const xMax = new Date(day.getTime() + (shiftHours + 4) * 60 * 60 * 1000).toISOString();
             currentBox.xMax = xMax;
             annotations.push(currentBox);
             currentBox = null;
@@ -187,7 +203,7 @@ function toolTipCallBack(context) {
     const lines = [`${label}: ${current}`];
 
     const compareList = {
-        'Total Processed': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Good'],
+        'Total Processed': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Total Good'],
         'Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good'],
         'Max Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good', 'Total Boards']
     };
@@ -309,8 +325,8 @@ function findSerialLabel(dateStr, serial) {
     if (!dayData) return "New Hashboard";
 
     for (const label in dayData) {
-        const serials = dayData[label];
-        if (Array.isArray(serials) && serials.includes(serial)) {
+        const issues = dayData[label];
+        if (Array.isArray(issues) && issues.some(issue => issue.serial === serial)) {
             return label;
         }
     }
@@ -360,36 +376,47 @@ function createHbString(hashboard) {
 
 
 function generateSerialList(dateStr, label) {
-    const serials = {};
+    const issues = {};
     for (let offset = -1; offset < 2; offset++) {
-        serials[offset] = window.timeline[changeDay(dateStr, offset)]?.[label] || [];
+        issues[offset] = window.timeline[changeDay(dateStr, offset)]?.[label] || [];
     }
 
-    function annotateSerials(baseList, offsetDirection, descriptor) {
-        return baseList.map(serial => {
-            const relatedLabel = findSerialLabel(changeDay(dateStr, offsetDirection), serial);
-            return { serial, display: `${serial} - ${descriptor} ${relatedLabel}` };
+    function initial(str) {
+        return str.split(' ').map(word => word[0].toUpperCase()).join('');
+    }
+
+    function annotateIssues(baseList, offsetDirection, descriptor) {
+        return baseList.map(issue => {
+            const relatedLabel = findSerialLabel(changeDay(dateStr, offsetDirection), issue.serial);
+            return { serial: issue.serial, display: `(${initial(issue.assignee)}) ${issue.serial} - ${descriptor} ${relatedLabel}` };
         });
     }
 
-    const removed_serials = annotateSerials(
-        serials[-1].filter(x => !serials[0].includes(x)),
+    const removed_issues = annotateIssues(
+        issues[-1].filter(
+            oldIssue => !issues[0].some(current => current.serial === oldIssue.serial)
+        ),
         0,
         'to'
-    );
+    ).sort((a, b) => a.display.localeCompare(b.display));;
 
-    const unchanged_serials = serials[0].filter(x => serials[-1].includes(x)).map(s => ({ serial: s, display: s }));
+    const unchanged_issues = issues[0]
+        .filter(current => issues[-1].some(old => old.serial === current.serial))
+        .map(issue => ({ serial: issue.serial, display: `(${initial(issue.assignee)}) ${issue.serial}` }))
+        .sort((a, b) => a.display.localeCompare(b.display));
 
-    const added_serials = annotateSerials(
-        serials[0].filter(x => !serials[-1].includes(x)),
+    const added_issues = annotateIssues(
+        issues[0].filter(
+            current => !issues[-1].some(old => old.serial === current.serial)
+        ),
         -1,
         'from'
-    );
+    ).sort((a, b) => a.display.localeCompare(b.display));;
 
     const diffConfig = [
-        { title: 'Removed Serials', color: 'red', data: removed_serials },
-        { title: 'Unchanged Serials', color: 'black', data: unchanged_serials },
-        { title: 'Added Serials', color: 'green', data: added_serials },
+        { title: 'Removed Serials', color: 'red', data: removed_issues },
+        { title: 'Unchanged Serials', color: 'black', data: unchanged_issues },
+        { title: 'Added Serials', color: 'green', data: added_issues },
     ];
 
     const serialDivContainer = document.createElement('div');
@@ -406,7 +433,6 @@ function generateSerialList(dateStr, label) {
     textArea.style.whiteSpace = 'pre'; 
     textArea.style.overflow = 'auto'; 
     
-    // issue summary fetcher
     async function handleSerialClick(serial) {
         try {
             const res = await fetch('/api/get_issue_summary', {
@@ -445,7 +471,6 @@ function generateSerialList(dateStr, label) {
             select.appendChild(option);
         });
 
-        // Fetch summary when selection changes
         select.addEventListener('change', (e) => {
             const selected = Array.from(e.target.selectedOptions)[0]; // only handle first one for now
             if (selected) {
