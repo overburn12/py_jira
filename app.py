@@ -33,9 +33,9 @@ def repair_time_page():
 def timeline_page():
     return render_template('Timeline.html')
 
-@app.route('/test', methods=['GET'])
+@app.route('/multiorder', methods=['GET'])
 def test_page():
-    return render_template('testOutput.html')
+    return render_template('multiOrder.html')
 
 
 #--------------------------------------------------------------------------------------

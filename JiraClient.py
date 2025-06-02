@@ -373,6 +373,7 @@ class JiraClient(JiraWrapper):
             start_date = self.epics[epic_key].start_date.date()
 
         # PART 1: create the empty timeline container
+            print("DUXCK 1")
 
             timeline = {}
             status_list = ['Total Boards', 'Total Chassis', 'Total Good', 'Total Processed']
@@ -382,6 +383,7 @@ class JiraClient(JiraWrapper):
                     timeline[day][status] = []
 
         # PART 2: insert hb statuses into timeline container
+            print("DUXK 2")
             issues = self.epics[epic_key].tasks
 
             # Advanced Repair or Backlog overnight is an error, shift it to Awating advanced repair
@@ -417,24 +419,27 @@ class JiraClient(JiraWrapper):
                     timeline[day]['Total Boards'].append(hb_obj)
 
         # PART 3: insert chassis status into the timeline
+            print("DUCK 3")
             issues = self.epics[epic_key].stories
 
             for issue in issues:
                 chassis_timeline = self.simplify_issue_timeline(issue, start_date, end_date)
 
                 for day in chassis_timeline:
-                    chassis_status = chassis_timeline[day]
-                    hb_obj = {"serial": issue.serial, "assignee": issue.assignee}
-                    if chassis_status is not None:
-                        if chassis_status not in status_list:
-                            status_list.append(chassis_status)
-                        if chassis_status not in timeline[day]:
-                            timeline[day][chassis_status] = []
-                        timeline[day][chassis_status].append(hb_obj)
-                    timeline[day]['Total Chassis'].append(hb_obj)
+                    if day in timeline:
+                        chassis_status = chassis_timeline[day]
+                        hb_obj = {"serial": issue.serial, "assignee": issue.assignee}
+                        if chassis_status is not None:
+                            if chassis_status not in status_list:
+                                status_list.append(chassis_status)
+                            if chassis_status not in timeline[day]:
+                                timeline[day][chassis_status] = []
+                            timeline[day][chassis_status].append(hb_obj)
+                        timeline[day]['Total Chassis'].append(hb_obj)
 
 
         # PART 4: prune leading days
+            print("DUXK 4")
             #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
 
             pruned_timeline = {}

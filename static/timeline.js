@@ -116,6 +116,8 @@ function formatTimelineForChartjs(epicData) {
     };
 }
 
+
+
 //shift forwards or backwards on the date
 function changeDay(day, direction) {
     const date = new Date(day);
@@ -377,13 +379,24 @@ function createHbString(hashboard) {
 
 function generateSerialList(dateStr, label) {
     const issues = {};
+    const timelineKeys = Object.keys(window.timeline);
+    const currentIndex = timelineKeys.indexOf(dateStr);
+    
     for (let offset = -1; offset < 2; offset++) {
-        issues[offset] = window.timeline[changeDay(dateStr, offset)]?.[label] || [];
+        const targetIndex = currentIndex + offset;
+        if (targetIndex >= 0 && targetIndex < timelineKeys.length) {
+            const targetDate = timelineKeys[targetIndex];
+            issues[offset] = window.timeline[targetDate]?.[label] || [];
+        } else {
+            issues[offset] = [];
+        }
     }
 
     function initial(str) {
-        return str.split(' ').map(word => word[0].toUpperCase()).join('');
+        if (!str || typeof str !== 'string') return '?';
+        return str.trim().split(/\s+/).map(word => word[0]?.toUpperCase() || '').join('');
     }
+    
 
     function annotateIssues(baseList, offsetDirection, descriptor) {
         return baseList.map(issue => {
