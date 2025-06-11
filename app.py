@@ -135,7 +135,7 @@ def api_update_board():
     
 
 
-@app.route('/create_board', methods=['POST'])
+@app.route('/api/create_board', methods=['POST'])
 def update_board():
     try:
         board_data = request.json

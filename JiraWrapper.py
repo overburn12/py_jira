@@ -234,42 +234,52 @@ class JiraWrapper:
 
     def create_issue_if_not_exists(self, board_data):
         try:
-            # Extract fields from board_data
             epic_key = full_rt(board_data.get("epicKey", "")).strip()
             board_model = board_data.get("boardModel", "").strip()
             frequency = board_data.get("frequency", "").strip()
             hashrate = board_data.get("hashRate", "").strip()
-            serial = board_data.get("serial", "").strip()  # This will be the issue summary
+            serial = board_data.get("serial", "").strip()
 
             if not all([epic_key, board_model, frequency, hashrate, serial]):
                 logger.warning("Missing required board data fields.")
                 return False
 
-            # JQL to check if issue with same summary already exists under this epic
-            jql = f'"Epic Link" = "{epic_key}" AND summary ~ "{serial}"'
-            existing_issues = list(self.search_issues(jql, paginate=False))
-            if existing_issues:
-                logger.info(f"Issue with summary '{serial}' already exists in epic '{epic_key}'")
+            # Check if issue already exists
+            jql = f'"Epic Link" = "{epic_key}" AND summary ~ "{serial}" AND issuetype = Task'
+            existing = list(self.search_issues(jql, batch_size=1))
+            if existing:
+                logger.info(f"Issue with serial '{serial}' already exists in epic '{epic_key}'.")
                 return False
 
-            # Construct the issue payload
-            issue_fields = {
-                "project": {"key": "RT"},
-                "summary": serial,
-                "description": f"Auto-created board task for serial: {serial}",
-                "issuetype": {"name": "Task"},
-                "customfield_10230": {"value": board_model},  # Board model
-                "customfield_10229": frequency,               # Frequency
-                "customfield_10153": hashrate,                # Hashrate
-                "customfield_10008": epic_key                 # Epic Link (RT-xxxx)
+            # Only valid models are allowed
+            valid_board_models = {
+                "NBS1906", "BHB42831", "NBP1901", "BHB42603", "BHB42631", "BHB42841",
+                "BHB42601", "BHB56801", "BHB42621", "BHB42651", "BHB56903", "BHB68606",
+                "BHB68603", "A3HB70601", "BHB68701"
             }
 
-            new_issue = self.jira.create_issue(fields=issue_fields)
-            logger.info(f"Created new issue: {new_issue.key} for board serial '{serial}'")
+            fields = {
+                "project": {"key": "RT"},
+                "summary": serial,
+                "issuetype": {"name": "Task"},
+                "customfield_10014": epic_key,  # ← Epic Link
+                "customfield_10153": hashrate,  # Hashrate
+            }
+
+            # Set model if valid
+            if board_model in valid_board_models:
+                fields["customfield_10230"] = {"value": board_model}
+            else:
+                logger.warning(f"Invalid board model '{board_model}' — not added to issue.")
+
+            # Frequency if present
+            if frequency:
+                fields["customfield_10229"] = frequency
+
+            new_issue = self.jira.create_issue(fields=fields)
+            logger.info(f"Created issue {new_issue.key} for board serial '{serial}'")
             return True
 
         except Exception as e:
-            logger.exception(f"Failed to create issue for board: {e}")
+            logger.exception(f"Failed to create issue: {e}")
             return False
-
-    
