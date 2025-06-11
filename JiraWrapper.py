@@ -231,3 +231,46 @@ class JiraWrapper:
             logger.info(f"Saved {len(issue_data)} issues to {file_path}")
         except Exception as e:
             logger.exception(f"Failed to dump {full_key}: {e}")
+
+
+    def create_issue_if_not_exists(self, board_data):
+        try:
+            # Extract fields from board_data
+            epic_key = full_rt(board_data.get("epicKey", "")).strip()
+            board_model = board_data.get("boardModel", "").strip()
+            frequency = board_data.get("frequency", "").strip()
+            hashrate = board_data.get("hashRate", "").strip()
+            serial = board_data.get("serial", "").strip()  # This will be the issue summary
+
+            if not all([epic_key, board_model, frequency, hashrate, serial]):
+                logger.warning("Missing required board data fields.")
+                return False
+
+            # JQL to check if issue with same summary already exists under this epic
+            jql = f'"Epic Link" = "{epic_key}" AND summary ~ "{serial}"'
+            existing_issues = list(self.search_issues(jql, paginate=False))
+            if existing_issues:
+                logger.info(f"Issue with summary '{serial}' already exists in epic '{epic_key}'")
+                return False
+
+            # Construct the issue payload
+            issue_fields = {
+                "project": {"key": "RT"},
+                "summary": serial,
+                "description": f"Auto-created board task for serial: {serial}",
+                "issuetype": {"name": "Task"},
+                "customfield_10230": {"value": board_model},  # Board model
+                "customfield_10229": frequency,               # Frequency
+                "customfield_10153": hashrate,                # Hashrate
+                "customfield_10008": epic_key                 # Epic Link (RT-xxxx)
+            }
+
+            new_issue = self.jira.create_issue(fields=issue_fields)
+            logger.info(f"Created new issue: {new_issue.key} for board serial '{serial}'")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Failed to create issue for board: {e}")
+            return False
+
+    

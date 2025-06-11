@@ -101,6 +101,27 @@ def update_board():
     except Exception as e:
         print(f"Error in /update_board: {e}")
         return jsonify({"error": "Internal server error"}), 500
+    
+
+
+@app.route('/create_board', methods=['POST'])
+def update_board():
+    try:
+        board_data = request.json
+        if not board_data:
+            return jsonify({"error": "Missing board data"}), 400
+
+        result = client.create_issue_if_not_exists(board_data)
+
+        if result:
+            return "OKAY", 200
+        else:
+            return "NOT OKAY", 200
+
+    except Exception as e:
+        print(f"Error in /update_board: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
 
 
 @app.route('/get_timeline', methods=['GET'])
