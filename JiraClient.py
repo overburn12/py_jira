@@ -1,5 +1,6 @@
 from helper import logger, date_range
 from JiraWrapper import JiraWrapper
+from issueWrapper import Story, Task, Epic
 
 #-----------------------------------------------------------------------------------------------------------
 # JiraClient Class
@@ -16,7 +17,7 @@ class JiraClient(JiraWrapper):
 
         for epic_key in self.epics:
             epic = self.epics[epic_key]
-            issue_count = len(epic.issues)
+            issue_count = len(epic.tasks)
             epic_list.append({
                 "rt_num": epic.key,
                 "summary": epic.title,
@@ -25,91 +26,202 @@ class JiraClient(JiraWrapper):
             })
 
         return epic_list
+    
+    
+    def get_total_epic(self, epic_key):
+        return self.epics[epic_key].to_dict()
+    
+
+    def get_serial_from_key_and_epic(self, issue_key, epic_key):
+        issue = None
+
+        for check_issue in self.epics[epic_key].tasks:
+            if check_issue.key == issue_key:
+                issue = check_issue
+                break
+
+        if issue is None: #check stories if its not found in tasks
+            for check_issue in self.epics[epic_key].stories:
+                if check_issue.key == issue_key:
+                    issue = check_issue
+                    break
+        
+        if issue is None:
+            return "Not Found"
+        
+        return issue.serial
+
+
+    def create_issue_summary_by_serial_from_epic(self, serial, epic_key):
+        issue = None
+
+        for check_issue in self.epics[epic_key].tasks:
+            if check_issue.serial == serial:
+                issue = check_issue
+                break
+
+        if issue is None: #check stories if its not found in tasks
+            for check_issue in self.epics[epic_key].stories:
+                if check_issue.serial == serial:
+                    issue = check_issue
+                    break
+        
+        return self.create_issue_summary(issue, epic_key)
+
+
+    def create_issue_summary(self, issue, epic_key):
+        #compiles hashboard data, repair summary, status changes, and comments for display on the front end.
+        
+        if issue is None:
+            return {   
+            "serial": "NoneType",
+            "assignee": "NoneType",
+            "rt_num": "NoneType",
+            "board_model": 'NoneType',
+            "repair_summary": "Issue not found",
+            "events": []
+        }       
+
+        events = []
+
+        # add the status changes to events
+        for status_change in issue.status_history:
+            events.append({
+                "type": "status_change",
+                "from": status_change.from_status,
+                "to": status_change.to_status,
+                "time": status_change.timestamp,
+                "length": None,
+                "author": status_change.author
+            })
+
+        # sort events chronologically, so we can calc status lengths properly
+        events.sort(key=lambda x: x["time"])
+
+        # calc status time durations
+        for i, event in enumerate(events):
+            if event["type"] == "status_change":
+                next_status_time = None
+                for j in range(i + 1, len(events)):
+                    if events[j]["type"] == "status_change":
+                        next_status_time = events[j]["time"]
+                        break
+                if next_status_time:
+                    duration = next_status_time - event["time"]
+                    total_minutes = int(duration.total_seconds() // 60)
+                    hours, minutes = divmod(total_minutes, 60)
+                    event["length"] = f"{hours:01}h {minutes:02}m"
+                else:
+                    event["length"] = "Current Status"  # Final status, no next one
+                
+
+        # add comments to events
+        for comment in issue.comments:
+            events.append({
+                "type": "comment",
+                "author": comment.author,
+                "time": comment.timestamp,
+                "body": comment.body
+            })
+
+        # sort events chronologically
+        events.sort(key=lambda x: x["time"])
+
+        filtered_events = []
+
+        #filter events / set flags
+        for event in events:
+
+            event['time'] = event['time'].strftime("%Y-%m-%d %H:%M")
+            if event['type'] == "status_change":
+                filtered_events.append(event)
+
+
+            if event['type'] == "comment":
+                event['body'] = event['body'].replace("\n", "-")
+                filtered_events.append(event)
+
+        result = {
+            "serial": issue.serial,
+            "rt_num": issue.key,
+            "assignee": issue.assignee,
+            "repair_summary": issue.repair_summary.replace('\n', '-') if issue.repair_summary else 'N/A',
+            "events": filtered_events
+        }
+
+        if issue.type == "Story":
+            serial_list = []
+
+            for linked_issue in issue.linked_issues:
+                serial_list.append(self.get_serial_from_key_and_epic(linked_issue, epic_key))
+
+            result["linked_issues"] = serial_list
+        else:
+            result["board_model"] = issue.board_model if issue.board_model else 'N/A'
+
+        return result 
+
+
+    def get_issue_summary_from_epic(self, epic_key):
+        issue_list = []
+
+        for issue in self.epics[epic_key].tasks:
+            last_timestamp = None
+            summary = self.create_issue_summary(issue, epic_key)
+            for event in summary['events']:
+                last_timestamp = event['time']
+            summary['time'] = last_timestamp
+            issue_list.append(summary)
+
+        issue_list.sort(key=lambda x: x["time"])
+        for issue in issue_list:
+            yield issue
 
 
     def get_repair_data_from_epic(self, epic_key):
-        #filters repair status and comments for display on the front end.
-        #used to get an idea of how long specific repairs take, and how long the specific repairs took
+        # filters repair status and comments using create_issue_summary
+        # yields only issues that passed through Advanced Repair & Awaiting Functional Test, and were NOT scrapped
+        
+        issue_list = []
+        image_extensions = (".png", ".jpeg", ".jpg") #skip comments with images
 
-        issues = self.epics[epic_key].issues
+        for issue in self.epics[epic_key].tasks:
+            summary = self.create_issue_summary(issue, epic_key)
+            events = summary["events"]
 
-        for issue in issues:
-            if issue.issue_type != 'Task':
-                continue
-
-            events = []
-
-            # add the status changes to events
-            for status_change in issue.status_history:
-                events.append({
-                    "type": "status_change",
-                    "from": status_change.from_status,
-                    "to": status_change.to_status,
-                    "time": status_change.timestamp,
-                    "length": None,
-                    "author": status_change.author
-                })
-
-            # sort events chronologically
-            events.sort(key=lambda x: x["time"])
-
-            # calc status time durations
-            for i, event in enumerate(events):
-                if event["type"] == "status_change":
-                    next_status_time = None
-                    for j in range(i + 1, len(events)):
-                        if events[j]["type"] == "status_change":
-                            next_status_time = events[j]["time"]
-                            break
-                    if next_status_time:
-                        event["length"] = next_status_time - event["time"]
-                    else:
-                        event["length"] = -1  # Final status, no next one
-
-            # add comments to events
-            for comment in issue.comments:
-                events.append({
-                    "type": "comment",
-                    "author": comment.author,
-                    "time": comment.timestamp,
-                    "body": comment.body
-                })
-
-            # sort events chronologically
-            events.sort(key=lambda x: x["time"])
-
-
-            image_extensions = (".png", ".jpeg", ".jpg") #skip comments with images
             advanced_repair = False
             awaiting_functional_test = False
             scrap = False
+            last_timestamp = None
+
             filtered_events = []
 
-            #filter events / set flags
             for event in events:
                 if event['type'] == "status_change":
                     if event['to'] == "Advanced Repair":
+                        filtered_events.append(event)
                         advanced_repair = True
+                        last_timestamp = event['time']
+                    elif event['to'] == "Awaiting Functional Test":
                         filtered_events.append(event)
-                    if event['to'] == "Awaiting Functional Test":
                         awaiting_functional_test = True
-                        filtered_events.append(event)
-                    if event['to'] == "Scrap":
+                        last_timestamp = event['time']
+                    elif event['to'] == "Scrap":
                         scrap = True
-
-                if event['type'] == "comment":
+                elif event['type'] == "comment":
                     if not any(ext in event["body"] for ext in image_extensions):
-                        event['body'] = event['body'].replace("\n", "-")
                         filtered_events.append(event)
-
+                        last_timestamp = event['time']
 
             if advanced_repair and awaiting_functional_test and not scrap:
-                yield { "serial": issue.serial,
-                        "rt_num": issue.key,
-                        "board_model": issue.board_model if issue.board_model else 'N/A',
-                        "repair_summary": issue.repair_summary.replace('\n', '-') if issue.repair_summary else 'N/A',
-                        "events": filtered_events
-                }
+                summary["time"] = last_timestamp
+                summary['events'] = filtered_events
+                issue_list.append(summary)
+
+        issue_list.sort(key=lambda x: x["time"])
+        for issue in issue_list:
+            yield issue
+            
 
 
     def update_jira_with_board_data(self, board_data):
@@ -191,10 +303,8 @@ class JiraClient(JiraWrapper):
 #-----------------------------------------------------------------------------------------------------------
 
     def get_max_min_epic_dates(self, epic_key):
-        issues = [
-            issue for issue in self.epics[epic_key].issues
-            if issue.issue_type == "Task"
-        ]
+        issues = self.epics[epic_key].tasks
+
 
         if not issues:
             return None, None
@@ -213,14 +323,16 @@ class JiraClient(JiraWrapper):
 
 
 
-    def simplify_hashboard_timeline(self, hashboard, start_date, end_date):
+    def simplify_issue_timeline(self, issue, start_date, end_date):
         # Build blank timeline
-        timeline = {day: None for day in date_range(start_date, end_date)}
+        created_date = issue.created.date()
+        timeline = {day: None for day in date_range(created_date, end_date)}
 
         # Insert status change events into timeline
-        for change in hashboard.status_history:
+        for change in issue.status_history:
             change_day = change.timestamp.date()
             timeline[change_day] = change.to_status
+    
 
         # Fill in missing days by carrying forward the last known status
         last_status = None
@@ -236,9 +348,9 @@ class JiraClient(JiraWrapper):
     def create_epic_timeline_data(self, epic_key):
     #used for sending packaged data to front end
 
-        if self.epics[epic_key].issues is None: #this needs work, doesnt work right
-            for _ in self.dump_issues_to_files(epic_key): #supposed to auto download the jira issues if they are missing
-                pass
+        #if self.epics[epic_key].issues is None: #this needs work, doesnt work right
+        #    for _ in self.dump_issues_to_files(epic_key): #supposed to auto download the jira issues if they are missing
+        #        pass
 
         epic_data = {
             "rt": epic_key,
@@ -257,16 +369,20 @@ class JiraClient(JiraWrapper):
                 logger.warning(f"No data for {epic_key}")
                 return None
 
+            #override
+            start_date = self.epics[epic_key].start_date.date()
+
         # PART 1: create the empty timeline container
 
             timeline = {}
+            status_list = ['Total Boards', 'Total Chassis', 'Total Processed']
             for day in date_range(start_date, end_date):
-                timeline[day] = {'Total Boards': []}
+                timeline[day] = {}
+                for status in status_list:
+                    timeline[day][status] = []
 
         # PART 2: insert hb statuses into timeline container
-
-            issues = self.epics[epic_key].issues
-            status_list = ['Total Boards']
+            issues = self.epics[epic_key].tasks
 
             # Advanced Repair or Backlog overnight is an error, shift it to Awating advanced repair
             convert_status = {
@@ -274,28 +390,53 @@ class JiraClient(JiraWrapper):
                 "Backlog": "Awaiting Advanced Repair"
             }
 
+            total_good = ['Awaiting Functional Test', 'Passed Initial Diagnosis']
+
             #insert each hashboard timeline into the epic timeline
             for issue in issues:
-                if issue.issue_type != "Task":
-                    continue
-
-                hb_timeline = self.simplify_hashboard_timeline(issue, start_date, end_date)
+                hb_timeline = self.simplify_issue_timeline(issue, start_date, end_date)
 
                 for day in hb_timeline:
+                    if day not in timeline:
+                        continue
                     hb_status = hb_timeline[day]
+                    hb_obj = {"serial": issue.serial, 'assignee': issue.assignee}
                     if hb_status is not None:
+                        if hb_status in total_good:
+                            timeline[day]['Total Processed'].append(hb_obj)
+                        if hb_status in 'Scrap':
+                            timeline[day]['Total Processed'].append(hb_obj)
                         if hb_status in convert_status:
                             hb_status = convert_status[hb_status] 
                         if hb_status not in status_list:
                             status_list.append(hb_status)
                         if hb_status not in timeline[day]:
                             timeline[day][hb_status] = []
-                        timeline[day][hb_status].append(issue.serial)
-                        timeline[day]['Total Boards'].append(issue.serial)
+                        timeline[day][hb_status].append(hb_obj)
+                    timeline[day]['Total Boards'].append(hb_obj)
 
-        # PART 3: prune leading days
+        # PART 3: insert chassis status into the timeline
+            issues = self.epics[epic_key].stories
+
+            for issue in issues:
+                chassis_timeline = self.simplify_issue_timeline(issue, start_date, end_date)
+
+                for day in chassis_timeline:
+                    if day in timeline:
+                        chassis_status = chassis_timeline[day]
+                        hb_obj = {"serial": issue.serial, "assignee": issue.assignee}
+                        if chassis_status is not None:
+                            if chassis_status not in status_list:
+                                status_list.append(chassis_status)
+                            if chassis_status not in timeline[day]:
+                                timeline[day][chassis_status] = []
+                            timeline[day][chassis_status].append(hb_obj)
+                        timeline[day]['Total Chassis'].append(hb_obj)
+
+
+        # PART 4: prune leading days
             #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
-            
+
             pruned_timeline = {}
             START = False
 
@@ -305,7 +446,7 @@ class JiraClient(JiraWrapper):
                     START = True
                 if START:
                     if 'Done' in timeline[day]:
-                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
+                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards'])+len(timeline[day]['Total Chassis']): #stop when all boards are in 'done' state
                             break
                     pruned_timeline[day] = {}
                     for status in status_list:

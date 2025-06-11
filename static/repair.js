@@ -11,7 +11,7 @@ function createHbString(hashboard) {
     const initials = (author) =>
         author.split(/\s+/).map(word => word[0].toUpperCase()).join('');
 
-    let answer = `\n${hashboard.serial} (${hashboard.board_model})\n${hashboard.repair_summary}\n`;
+    let answer = `\n${hashboard.serial} (${hashboard.board_model}) [${initials(hashboard.assignee)}]\n${hashboard.repair_summary}\n`;
 
     for (const event of hashboard.events) {
         const init = initials(event.author);
@@ -32,7 +32,7 @@ function createHbString(hashboard) {
 // Fetch orders and populate dropdown
 async function loadOrders() {
     try {
-        const response = await fetch('/get_orders');
+        const response = await fetch('/api/get_orders');
         const orders = await response.json();
         rtSelect.innerHTML = '';  // Clear current options
 
@@ -53,9 +53,11 @@ loadOrders(); // load when page loads
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const rtNumber = rtSelect.value;
+    const selectedRadioButton = document.querySelector('input[name="radio-group"]:checked');
+    const apiEndpoint = selectedRadioButton.value === 'repair'? '/api/get_repair_times' : '/api/get_all_issue_summaries';
     responseTextArea.value = '';  // Clear previous results
 
-    const response = await fetch('/get_repair_times', {
+    const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

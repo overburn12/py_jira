@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Test Page
+{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
+
+    <style>
+        .element-block {
+            width: 1000px;
+        }
+        #response {
+            width: 100%;
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 14px;
+            font-family: monospace;
+            resize: none;
+            box-sizing: border-box;
+            white-space: pre; 
+            overflow-x: auto; 
+            overflow-y: auto;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+{{ block_header('Multiple Order Timeline') }}
+        <form id="rt-form">
+            <label for="rt_number">Select RT Number:</label>
+            <select id="rt_number" name="rt_number" multiple size="15">
+                <option value="">Loading...</option>
+            </select>
+            <input type="button" id="submit-button" value="Submit">
+        </form>
+        <div style="position: relative; height: 100%; width: 100%;">
+            <canvas id="dailyChart"></canvas><br>
+            <canvas id="monthlyChart"></canvas>
+        </div>
+    {{ block_footer() }}
+{% endblock %}
+
+{% block script %}
+    <script src="/static/epic.js"></script>
+    <script>
+
+        const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+        const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+
+        let timelineChart = null;
+        let monthlyChart = null;
+
+
+        const form = document.getElementById('rt-form');
+        const rtSelect = document.getElementById('rt_number');
+        
+        // Fetch orders and populate dropdown
+        async function loadOrders() {
+            try {
+                const response = await fetch('/api/get_orders');
+                const orders = await response.json();
+                rtSelect.innerHTML = '';
+                
+                orders.forEach(order => {
+                    const option = document.createElement('option');
+                    option.value = order.rt_num;  
+                    option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
+                    rtSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load orders:', error);
+                rtSelect.innerHTML = '<option value="">Failed to load</option>';
+            }
+        }
+        
+        loadOrders();
+
+
+
+
+
+
+
+
+
+    function formatTotalTimelineForChartjs(epicList) {
+        const mergedTimeline = {};
+        const allDaysSet = new Set();
+    
+        // Step 1: Collect all unique days
+        for (const epic of epicList) {
+            if (!epic.timeline) continue;
+            for (const day in epic.timeline) {
+                allDaysSet.add(day);
+            }
+        }
+    
+        const allDays = Array.from(allDaysSet).sort();
+    
+        // Step 2: Pad all timelines
+        const paddedEpics = epicList.map(epic => {
+            const epicKey = epic.rt;
+            const originalTimeline = epic.timeline;
+            if (!originalTimeline) return null;
+    
+            const paddedTimeline = {};
+            let lastDayData = {};
+    
+            for (const day of allDays) {
+                if (originalTimeline[day]) {
+                    lastDayData = JSON.parse(JSON.stringify(originalTimeline[day]));
+                }
+    
+                const paddedDay = {};
+                if (lastDayData) {
+                    for (const status in lastDayData) {
+                        paddedDay[status] = lastDayData[status]?.map(obj => ({
+                            ...obj,
+                            epic_key: epicKey
+                        })) || null;
+                    }
+                }
+                paddedTimeline[day] = paddedDay;
+            }
+    
+            return { ...epic, timeline: paddedTimeline };
+        }).filter(Boolean);
+    
+        // Step 3: Merge timelines
+        for (const epic of paddedEpics) {
+            const epicKey = epic.rt;
+            const timeline = epic.timeline;
+    
+            for (const day in timeline) {
+                if (!mergedTimeline[day]) mergedTimeline[day] = {};
+    
+                const statuses = timeline[day];
+                for (const status in statuses) {
+                    if (!mergedTimeline[day][status]) {
+                        mergedTimeline[day][status] = [];
+                    }
+    
+                    const items = statuses[status];
+                    if (Array.isArray(items)) {
+                        mergedTimeline[day][status].push(...items);
+                    }
+                }
+            }
+        }
+    
+        // Step 4: Daily line chart
+        const labels = allDays;
+        const allStatusesSet = new Set();
+    
+        for (const day of labels) {
+            for (const status in mergedTimeline[day]) {
+                allStatusesSet.add(status);
+            }
+        }
+    
+        const allStatuses = Array.from(allStatusesSet);
+    
+        const datasets = allStatuses.map(status => ({
+            label: status,
+            data: labels.map(day => mergedTimeline[day][status]?.length ?? null)
+        }));
+    
+        // Step 5: Monthly delta bar chart
+        const monthMap = {};  // { "YYYY-MM": {status1: count, ...} }
+        const monthLabelsSet = new Set();
+    
+        for (const day of labels) {
+            const month = day.slice(0, 7); // "YYYY-MM"
+            monthLabelsSet.add(month);
+            if (!monthMap[month]) {
+                monthMap[month] = {};
+            }
+    
+            for (const status of allStatuses) {
+                const count = mergedTimeline[day][status]?.length ?? 0;
+                monthMap[month][status] = count; // overwrite, we want last day of that month
+            }
+        }
+    
+        const monthLabels = Array.from(monthLabelsSet).sort();
+    
+        // Compute monthly deltas (difference from prev month)
+        const barChartDatasets = allStatuses.map(status => {
+            let prevCount = 0;
+            const monthlyData = monthLabels.map(month => {
+                const currentCount = monthMap[month][status] ?? prevCount;
+                const delta = currentCount - prevCount;
+                prevCount = currentCount;
+                return delta;
+            });
+    
+            return {
+                label: status,
+                data: monthlyData
+            };
+        });
+    
+        return {
+            labels,
+            datasets,
+            title: "Merged Epic Timeline",
+            monthly: {
+                labels: monthLabels,
+                datasets: barChartDatasets
+            }
+        };
+    }
+    
+
+
+    //shift forwards or backwards on the date
+    function changeDay(day, direction) {
+        const date = new Date(day);
+        date.setDate(date.getDate() + direction);
+        return date.toISOString().split('T')[0]; // Return in 'YYYY-MM-DD'
+    }
+
+
+    function generateWeekendBoxes(dateLabels) {
+        const annotations = [];
+        const holidayList = ['2025-05-26'];
+        const holidaySet = new Set(holidayList); // for fast lookup
+        let currentBox = null;
+
+        dateLabels.forEach((dateStr, idx) => {
+            const day = new Date(dateStr);
+            const isoDate = day.toISOString().split('T')[0]; // YYYY-MM-DD
+            const dayOfWeek = day.getUTCDay(); // Sunday=0, Saturday=6
+
+            if (dayOfWeek === 6) { // Saturday
+                // Look back to Friday
+                const friday = new Date(day);
+                friday.setUTCDate(day.getUTCDate() - 1);
+                const isFridayHoliday = holidaySet.has(friday.toISOString().split('T')[0]);
+
+                // Start weekend box: either normal Sat, or extend to Friday if holiday
+                const shiftHours = isFridayHoliday ? 36 : 12;
+                const xMin = new Date(day.getTime() - (shiftHours - 4) * 60 * 60 * 1000).toISOString();
+                currentBox = {
+                    type: 'box',
+                    xMin,
+                    backgroundColor: 'rgba(200, 200, 200, 0.5)',
+                    borderWidth: 0
+                };
+
+            } else if (dayOfWeek === 0 && currentBox) { // Sunday
+                // Look ahead to Monday
+                const monday = new Date(day);
+                monday.setUTCDate(day.getUTCDate() + 1);
+                const isMondayHoliday = holidaySet.has(monday.toISOString().split('T')[0]);
+
+                // End of weekend box
+                const shiftHours = isMondayHoliday ? 36 : 12;
+                const xMax = new Date(day.getTime() + (shiftHours + 4) * 60 * 60 * 1000).toISOString();
+                currentBox.xMax = xMax;
+                annotations.push(currentBox);
+                currentBox = null;
+            }
+        });
+
+        return annotations;
+    }
+
+
+    // Status-to-color map
+    const statusColors = {
+        "Backlog": "gray",
+        "Passed Initial Diagnosis": "green",
+        "Awaiting Advanced Repair": "lightblue",
+        "Awaiting Functional Test": "blue",
+        "Done": "darkgray",
+        "Scrap": "red",
+        "Hashboard Replacement Program": "orange",
+        "Advanced Repair": "yellow",
+        "Total Boards": "black",
+        "Total Chassis": "rgb(105, 105, 0)",
+        "Ready to Ship": "yellow"
+    };
+
+
+    //random color for statuses that dont fit status-to-color map
+    function getRandomColor() {
+        const r = Math.floor(Math.random() * 256);
+        const g = Math.floor(Math.random() * 256);
+        const b = Math.floor(Math.random() * 256);
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function toolTipCallBack(context) {
+        const dataset = context.dataset;
+        const index = context.dataIndex;
+        const label = dataset.label || '';
+        const current = context.parsed.y;
+
+        const lines = [`${label}: ${current}`];
+
+        const compareList = {
+            'Total Processed': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Total Good'],
+            'Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good'],
+            'Max Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good', 'Total Boards']
+        };
+
+        const chart = context.chart;
+
+        // Cache max Total Boards for the index, if needed
+        let maxTotalBoards = null;
+        if (Object.keys(compareList).includes('Max Total Boards')) {
+            const totalBoardsDataset = chart.data.datasets.find(ds => ds.label === 'Total Boards');
+            if (totalBoardsDataset) {
+                maxTotalBoards = Math.max(...totalBoardsDataset.data.filter(n => typeof n === 'number'));
+            }
+        }
+
+        // Loop through compareList to find all references that compare to this label
+        for (const [referenceLabel, targets] of Object.entries(compareList)) {
+            if (targets.includes(label)) {
+                let referenceValue = null;
+
+                if (referenceLabel === 'Max Total Boards') {
+                    referenceValue = maxTotalBoards;
+                } else {
+                    const refDataset = chart.data.datasets.find(ds => ds.label === referenceLabel);
+                    if (refDataset) {
+                        referenceValue = refDataset.data[index];
+                    }
+                }
+
+                if (typeof referenceValue === 'number' && referenceValue !== 0) {
+                    const percent = ((current / referenceValue) * 100).toFixed(1);
+                    lines.push(`vs ${referenceLabel}: ${percent}%`);
+                }
+            }
+        }
+
+        // Optional: delta from previous point in same dataset
+        const prev = index > 0 ? dataset.data[index - 1] : null;
+        if (typeof prev === 'number') {
+            const delta = current - prev;
+            const sign = delta > 0 ? '+' : '';
+            lines.push(`Change: ${sign}${delta}`);
+        }
+
+        return lines;
+    }
+
+
+
+
+
+    function renderChart(data) {
+        // === DAILY LINE CHART ===
+    
+        const dailyLabels = data.labels;
+        const dailyDatasets = data.datasets.map(ds => {
+            const color = statusColors[ds.label] || getRandomColor();
+            return {
+                label: ds.label,
+                data: ds.data,
+                borderColor: color,
+                backgroundColor: color,
+                fill: false,
+                tension: 0.1
+            };
+        });
+    
+        if (timelineChart) timelineChart.destroy();
+        timelineChart = new Chart(dailyCtx, {
+            type: 'line',
+            data: {
+                labels: dailyLabels,
+                datasets: dailyDatasets
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: data.title || `Timeline for RT ${data.title}`
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    annotation: {
+                        display: true,
+                        annotations: generateWeekendBoxes(dailyLabels)
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: toolTipCallBack
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Count'
+                        }
+                    }
+                }
+            }
+        });
+    
+        // === MONTHLY BAR CHART ===
+        if (monthlyChart) monthlyChart.destroy();
+    
+        const monthlyLabels = data.monthly.labels;
+        const monthlyDatasets = data.monthly.datasets.map(ds => {
+            const color = statusColors[ds.label] || getRandomColor();
+            return {
+                label: ds.label,
+                data: ds.data,
+                backgroundColor: color,
+                stack: 'stackedBars'
+            };
+        });
+    
+        monthlyChart = new Chart(monthlyCtx, {
+            type: 'bar',
+            data: {
+                labels: monthlyLabels,
+                datasets: monthlyDatasets
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Monthly Status Gains'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'Month'
+                        }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Count Gain'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+
+    function findSerialLabel(dateStr, serial) {
+        const dayData = window.timeline[dateStr];
+        if (!dayData) return "New Hashboard";
+    
+        for (const label in dayData) {
+            const issues = dayData[label];
+            if (Array.isArray(issues) && issues.some(issue => issue.serial === serial)) {
+                return label;
+            }
+        }
+    
+        return "New Hashboard";
+    }
+
+
+    // Add event listener to button
+    document.getElementById("submit-button").addEventListener('click', async (e) => {
+        e.preventDefault();
+        const selectedRtNumbers = [];
+        const selectedOptions = rtSelect.selectedOptions;
+
+        for (const option of selectedOptions) {
+            selectedRtNumbers.push(option.value);
+        }
+
+        window.epics = {}
+        epics = []
+
+        for(const epic_key of selectedRtNumbers){
+            const response = await fetch(`/api/get_timeline?rt=${epic_key}`);
+            const data_raw = await response.json();
+    
+            window.epics[epic_key] = data_raw;
+            epics.push(data_raw);
+        }
+
+        if (timelineChart) {
+            timelineChart.destroy();
+        }
+
+        data = formatTotalTimelineForChartjs(epics);
+        renderChart(data);
+
+
+    });
+
+    </script>
+{% endblock %}
+

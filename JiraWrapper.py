@@ -39,10 +39,9 @@ class JiraWrapper:
             fields = epic_data.get("fields", {})
             if key.startswith("RT-"):
                 created_time = datetime.strptime(fields["created"][:19], "%Y-%m-%dT%H:%M:%S")
-                created_date = created_time.strftime("%Y-%m-%d")
                 title=fields.get("summary", "")
             
-                epic = Epic(key=key, title=title, start_date=created_date)
+                epic = Epic(key=key, title=title, start_date=created_time)
 
                 issue_file = os.path.join(self.data_directory,f"{key}.json")
                 if os.path.exists(issue_file):
