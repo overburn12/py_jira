@@ -400,7 +400,7 @@ class JiraClient(JiraWrapper):
                     if day not in timeline:
                         continue
                     hb_status = hb_timeline[day]
-                    hb_obj = {"serial": issue.serial, 'assignee': issue.assignee}
+                    hb_obj = {"serial": issue.serial, 'assignee': issue.assignee, 'board_model': issue.board_model}
                     if hb_status is not None:
                         if hb_status in total_good:
                             timeline[day]['Total Processed'].append(hb_obj)
@@ -424,14 +424,14 @@ class JiraClient(JiraWrapper):
                 for day in chassis_timeline:
                     if day in timeline:
                         chassis_status = chassis_timeline[day]
-                        hb_obj = {"serial": issue.serial, "assignee": issue.assignee}
+                        chassis_obj = {"serial": issue.serial, "assignee": issue.assignee}
                         if chassis_status is not None:
                             if chassis_status not in status_list:
                                 status_list.append(chassis_status)
                             if chassis_status not in timeline[day]:
                                 timeline[day][chassis_status] = []
-                            timeline[day][chassis_status].append(hb_obj)
-                        timeline[day]['Total Chassis'].append(hb_obj)
+                            timeline[day][chassis_status].append(chassis_obj)
+                        timeline[day]['Total Chassis'].append(chassis_obj)
 
 
         # PART 4: prune leading days

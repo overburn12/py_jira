@@ -196,13 +196,122 @@ function getRandomColor() {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
+
+
 function toolTipCallBack(context) {
     const dataset = context.dataset;
     const index = context.dataIndex;
     const label = dataset.label || '';
     const current = context.parsed.y;
 
-    const lines = [`${label}: ${current}`];
+    const delta = index > 0 && typeof dataset.data[index - 1] === 'number'
+        ? current - dataset.data[index - 1]
+        : null;
+    const sign = delta !== null && delta > 0 ? '+' : '-';
+
+    const lines = [
+        `${label}: ${current}${delta !== null && delta !== 0 ? ` (${sign}${Math.abs(delta)})` : ''}`
+    ];
+
+    const compareList = {
+        'Total Processed': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Total Good'],
+        'Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good'],
+        'Max Total Boards': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Awaiting Advanced Repair', 'Total Processed', 'Total Good', 'Total Boards']
+    };
+
+    const chart = context.chart;
+
+    let maxTotalBoards = null;
+    if (Object.keys(compareList).includes('Max Total Boards')) {
+        const totalBoardsDataset = chart.data.datasets.find(ds => ds.label === 'Total Boards');
+        if (totalBoardsDataset) {
+            maxTotalBoards = Math.max(...totalBoardsDataset.data.filter(n => typeof n === 'number'));
+        }
+    }
+
+    for (const [referenceLabel, targets] of Object.entries(compareList)) {
+        if (targets.includes(label)) {
+            let referenceValue = null;
+
+            if (referenceLabel === 'Max Total Boards') {
+                const currentTotalBoards = chart.data.datasets.find(ds => ds.label === 'Total Boards')?.data[index];
+                if (typeof currentTotalBoards === 'number' && currentTotalBoards !== maxTotalBoards) {
+                    referenceValue = maxTotalBoards;
+                } else {
+                    continue;
+                }
+            } else {
+                const refDataset = chart.data.datasets.find(ds => ds.label === referenceLabel);
+                if (refDataset) {
+                    referenceValue = refDataset.data[index];
+                }
+            }
+
+            if (typeof referenceValue === 'number' && referenceValue !== 0) {
+                const percent = ((current / referenceValue) * 100).toFixed(1);
+                lines.push(`vs ${referenceLabel} (${referenceValue}): ${percent}%`);
+            }
+        }
+    }
+
+    // 🎯 EXTRA: Add Scrap or Repaired breakdown by board_model
+    const labels = chart.data.labels;
+    const dayKey = labels[index]; // Format: 'YYYY-MM-DD'
+    const timelineDay = window.timeline[dayKey];
+
+    if (timelineDay && (label === 'Scrap' || label === 'Awaiting Functional Test')) {
+        const totalBoardModels = {};
+        const targetBoardModels = {};
+        const labelTitle = label === 'Scrap' ? 'Scrap Rate by Model:' : 'Repaired Rate by Model:';
+        const tagName = label === 'Scrap' ? 'Scrap' : 'Awaiting Functional Test';
+
+        // Tally Total Boards
+        if (timelineDay['Total Boards']) {
+            for (const hb of timelineDay['Total Boards']) {
+                const model = hb.board_model || 'Unknown';
+                totalBoardModels[model] = (totalBoardModels[model] || 0) + 1;
+            }
+        }
+
+        // Tally label-specific (Scrap or Awaiting Functional Test)
+        if (timelineDay[tagName]) {
+            for (const hb of timelineDay[tagName]) {
+                const model = hb.board_model || 'Unknown';
+                targetBoardModels[model] = (targetBoardModels[model] || 0) + 1;
+            }
+        }
+
+        lines.push('');
+        lines.push(labelTitle);
+
+        for (const model in totalBoardModels) {
+            const total = totalBoardModels[model];
+            const count = targetBoardModels[model] || 0;
+            const rate = ((count / total) * 100).toFixed(1);
+            lines.push(`${model} (${count}/${total}): ${rate}%`);
+        }
+    }
+
+    return lines;
+}
+
+
+
+
+
+
+function toolTipCallBack_OLD(context) {
+    const dataset = context.dataset;
+    const index = context.dataIndex;
+    const label = dataset.label || '';
+    const current = context.parsed.y;
+
+    const delta = index > 0 && typeof dataset.data[index - 1] === 'number'? current - dataset.data[index - 1] : null;
+    const sign = delta!== null && delta > 0? '+' : '-';
+    
+    const lines = [
+      `${label}: ${current}${delta!== null && delta!== 0? ` (${sign}${Math.abs(delta)})` : ''}`
+    ];
 
     const compareList = {
         'Total Processed': ['Scrap', 'Passed Initial Diagnosis', 'Awaiting Functional Test', 'Total Good'],
@@ -227,27 +336,25 @@ function toolTipCallBack(context) {
             let referenceValue = null;
 
             if (referenceLabel === 'Max Total Boards') {
-                referenceValue = maxTotalBoards;
+                const currentTotalBoards = chart.data.datasets.find(ds => ds.label === 'Total Boards')?.data[index];
+                // Only show 'vs Max Total Boards' if current point is different from max
+                if (typeof currentTotalBoards === 'number' && currentTotalBoards !== maxTotalBoards) {
+                    referenceValue = maxTotalBoards;
+                } else {
+                    continue; // Skip adding this line
+                }
             } else {
                 const refDataset = chart.data.datasets.find(ds => ds.label === referenceLabel);
                 if (refDataset) {
                     referenceValue = refDataset.data[index];
                 }
             }
-
+            
             if (typeof referenceValue === 'number' && referenceValue !== 0) {
                 const percent = ((current / referenceValue) * 100).toFixed(1);
-                lines.push(`vs ${referenceLabel}: ${percent}%`);
+                lines.push(`vs ${referenceLabel} (${referenceValue}): ${percent}%`);
             }
         }
-    }
-
-    // Optional: delta from previous point in same dataset
-    const prev = index > 0 ? dataset.data[index - 1] : null;
-    if (typeof prev === 'number') {
-        const delta = current - prev;
-        const sign = delta > 0 ? '+' : '';
-        lines.push(`Change: ${sign}${delta}`);
     }
 
     return lines;
