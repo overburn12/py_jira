@@ -489,4 +489,4 @@ class JiraClient(JiraWrapper):
     def is_order_closed(self, rt_key):
         
 
-        return True
+        return False
