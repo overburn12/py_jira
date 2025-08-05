@@ -159,7 +159,16 @@ def api_get_timeline():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
+
+
+@app.route('/api/get_all_summaries', methods=['GET'])
+def get_all_summaries():
+    try:
+        summary_data = client.get_all_order_summaries()
+        return jsonify(summary_data)
+    except Exception as e:
+        return jsonify({'error': 'error in get_all_summaries'})
+
 
 @app.route('/api/get_total_epic', methods=['POST'])
 def api_get_total_epic():
