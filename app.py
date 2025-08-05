@@ -47,17 +47,6 @@ def summary_page():
 #--------------------------------------------------------------------------------------
 
 
-@app.route('/api/chip_count', methods=['POST'])
-def api_chip_count():
-    data = request.json
-    board_chip_count = data['chip_count']
-    board_serial = data['serial']
-    print(f"CHIP COUNT RECIEVED: {board_chip_count} FOR SERIAL: {board_serial}")
-    
-    #dummy api route for now. print to console for testing.
-    return "OKAY!"
-
-
 @app.route('/api/update_issues', methods=['POST'])
 def api_update_issues():
     rt_key = request.json['rt_number']
