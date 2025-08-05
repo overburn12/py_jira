@@ -462,4 +462,31 @@ class JiraClient(JiraWrapper):
             return timeline_str_keys
 
 
+#-----------------------------------------------------------------------------------------------------------
+# Order Summary Functions
+#-----------------------------------------------------------------------------------------------------------
 
+    def get_all_order_summaries(self):
+        summary_data = []
+
+        for epic_key in self.epics:
+            epic = self.epics[epic_key]
+            board_count = len(epic.tasks)
+            chassis_count = len(epic.stories)
+            is_closed = self.is_order_closed(epic_key)
+            summary_data.append({
+                "rt_num": epic.key,
+                "summary": epic.title,
+                "created": epic.start_date,
+                "board_count": board_count,
+                'chassis_count': chassis_count,
+                'is_closed': is_closed
+            })
+
+        return summary_data
+    
+
+    def is_order_closed(self, rt_key):
+        
+
+        return True
