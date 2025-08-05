@@ -29,7 +29,75 @@
 {% endblock %}
 
 {% block script %}
-    <script>
+<script>
+    async function loadSummaryTable() {
+        const container = document.getElementById('summary-container');
+        container.innerHTML = ''; // Clear previous content
 
-    </script>
+        // Define columns (label = header, key = JSON key)
+        const columns = [
+        { label: 'RT Number', key: 'rt_num' },
+        { label: 'Summary', key: 'summary' },
+        { label: 'Created Date', key: 'created' },
+        { label: 'Board Count', key: 'board_count' },
+        { label: 'Chassis Count', key: 'chassis_count' },
+        { label: 'Is Closed?', key: 'is_closed' }
+        ];
+
+        try {
+        const response = await fetch('/api/get_all_summaries');
+        const data = await response.json();
+
+        if (!Array.isArray(data)) {
+            container.textContent = 'Error: Invalid data format.';
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.style.borderCollapse = 'collapse';
+        table.style.width = '100%';
+
+        // Header row
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            th.style.border = '1px solid black';
+            th.style.padding = '6px';
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Data rows
+        const tbody = document.createElement('tbody');
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            columns.forEach(col => {
+            const td = document.createElement('td');
+            let value = item[col.key] ?? '';
+            if (col.key === 'created' && typeof value === 'string') {
+                value = new Date(value).toISOString().split('T')[0];
+            }
+            td.textContent = value;
+            td.style.border = '1px solid black';
+            td.style.padding = '6px';
+            row.appendChild(td);
+            });
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+
+        container.appendChild(table);
+        } catch (err) {
+        console.error('Failed to load summary table:', err);
+        container.textContent = 'Error loading summary data.';
+        }
+    }
+
+    // Call this function when the page loads or whenever you want
+    document.addEventListener('DOMContentLoaded', loadSummaryTable);
+
+</script>
 {% endblock %}
