@@ -37,6 +37,10 @@ def timeline_page():
 def test_page():
     return render_template('multiOrder.html')
 
+@app.route('/summary', methods=['GET'])
+def summary_page():
+    return render_template('orderSummary.html')
+
 
 #--------------------------------------------------------------------------------------
 # API Routes

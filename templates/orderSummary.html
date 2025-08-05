@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %} Order Summaries {% endblock %}
+
+{% block head %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
+    <script>
+        Chart.register(window['chartjs-plugin-annotation']);
+    </script>
+    <style>
+        .element-block{
+            width: 90%;
+            height: 90%;
+        }
+        #summary-container{
+            padding: 0px;
+        }
+
+    </style>
+{% endblock %}
+
+{% block content %}
+    {{ block_header('Order Summaries') }}
+        <div id="summary-container">
+        </div>
+    {{ block_footer() }}
+{% endblock %}
+
+{% block script %}
+    <script>
+
+    </script>
+{% endblock %}
