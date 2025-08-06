@@ -471,22 +471,55 @@ class JiraClient(JiraWrapper):
 
         for epic_key in self.epics:
             epic = self.epics[epic_key]
+
             board_count = len(epic.tasks)
             chassis_count = len(epic.stories)
-            is_closed = self.is_order_closed(epic_key)
+
+            done_count = 0
+            for issue in self.epics[epic_key].tasks:
+                last_status = issue.status_history[-1].to_status
+                if last_status == 'Done':
+                    done_count += 1
+            is_closed = "Open"
+            if done_count == board_count:
+                if done_count != 0:
+                    is_closed = "Closed"
+                else:
+                    is_closed = ""
+
+            epic_timeline = self.build_and_fill_epic_timeline(epic_key)
+            scrap_list = {}
+
+
             summary_data.append({
                 "rt_num": epic.key,
                 "summary": epic.title,
                 "created": epic.start_date,
                 "board_count": board_count,
                 'chassis_count': chassis_count,
-                'is_closed': is_closed
+                'is_closed': is_closed,
+                'scrap_list': scrap_list
             })
 
-        return summary_data
+        return {
+            "labels": {
+                "rt_num": "Epic Key",
+                "summary": "Summary",
+                "created": "Created Date",
+                "board_count": "Board Count",
+                'chassis_count': "Chassis Count",
+                'is_closed': "Order Closed" ,
+                'scrap_list': "Scrap Count"
+            },
+            "order": [
+                "rt_num",
+                "summary",
+                "created",
+                "board_count",
+                "chassis_count",
+                "is_closed",
+                "scrap_list"
+            ],
+            "data": summary_data
+        }
     
-
-    def is_order_closed(self, rt_key):
-        
-
-        return False
