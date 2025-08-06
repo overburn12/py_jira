@@ -30,74 +30,76 @@
 
 {% block script %}
 <script>
-    async function loadSummaryTable() {
-        const container = document.getElementById('summary-container');
-        container.innerHTML = ''; // Clear previous content
+  async function loadSummaryTable() {
+    const container = document.getElementById('summary-container');
+    container.innerHTML = ''; // Clear old stuff
 
-        // Define columns (label = header, key = JSON key)
-        const columns = [
-        { label: 'RT Number', key: 'rt_num' },
-        { label: 'Summary', key: 'summary' },
-        { label: 'Created Date', key: 'created' },
-        { label: 'Board Count', key: 'board_count' },
-        { label: 'Chassis Count', key: 'chassis_count' },
-        { label: 'Is Closed?', key: 'is_closed' }
-        ];
+    try {
+      const response = await fetch('/api/get_all_summaries');
+      const payload = await response.json();
 
-        try {
-        const response = await fetch('/api/get_all_summaries');
-        const data = await response.json();
+      // Expecting: { labels: { key: "Label", ... }, data: [ { key: value, ... }, ... ] }
+      const labels = payload.labels;
+      const data = payload.data;
 
-        if (!Array.isArray(data)) {
-            container.textContent = 'Error: Invalid data format.';
-            return;
-        }
+      if (!Array.isArray(data) || typeof labels !== 'object') {
+        container.textContent = 'Invalid data format.';
+        return;
+      }
 
-        const table = document.createElement('table');
-        table.style.borderCollapse = 'collapse';
-        table.style.width = '100%';
+      const table = document.createElement('table');
+      table.style.borderCollapse = 'collapse';
+      table.style.width = '100%';
 
-        // Header row
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        columns.forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = col.label;
-            th.style.border = '1px solid black';
-            th.style.padding = '6px';
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
 
-        // Data rows
-        const tbody = document.createElement('tbody');
-        data.forEach(item => {
-            const row = document.createElement('tr');
-            columns.forEach(col => {
-            const td = document.createElement('td');
-            let value = item[col.key] ?? '';
-            if (col.key === 'created' && typeof value === 'string') {
-                value = new Date(value).toISOString().split('T')[0];
+      // Get the column order from the labels object
+      const columnKeys = payload.order ?? Object.keys(labels);
+      columnKeys.forEach(key => {
+        const th = document.createElement('th');
+        th.textContent = labels[key];
+        th.style.border = '1px solid black';
+        th.style.padding = '6px';
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      data.forEach(item => {
+        const row = document.createElement('tr');
+        columnKeys.forEach(key => {
+          const td = document.createElement('td');
+          let value = item[key] ?? '';
+          if (key === 'created' && typeof value === 'string') {
+            try {
+              value = new Date(value).toISOString().split('T')[0];
+            } catch {
+              // fallback to raw value
             }
-            td.textContent = value;
-            td.style.border = '1px solid black';
-            td.style.padding = '6px';
-            row.appendChild(td);
-            });
-            tbody.appendChild(row);
+          }
+          if (typeof value === 'object' && value !== null) {
+            value = JSON.stringify(value);
+          }
+          td.textContent = value;
+          td.style.border = '1px solid black';
+          td.style.padding = '6px';
+          row.appendChild(td);
         });
-        table.appendChild(tbody);
+        tbody.appendChild(row);
+      });
 
-        container.appendChild(table);
-        } catch (err) {
-        console.error('Failed to load summary table:', err);
-        container.textContent = 'Error loading summary data.';
-        }
+      table.appendChild(tbody);
+      container.appendChild(table);
+    } catch (err) {
+      console.error('Failed to load summary table:', err);
+      container.textContent = 'Error loading summary data.';
     }
+  }
 
-    // Call this function when the page loads or whenever you want
-    document.addEventListener('DOMContentLoaded', loadSummaryTable);
-
+  // Load on page load
+  document.addEventListener('DOMContentLoaded', loadSummaryTable);
 </script>
+
 {% endblock %}
