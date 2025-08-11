@@ -440,11 +440,11 @@ class JiraClient(JiraWrapper):
 
             pruned_timeline = {}
             START = False
-            START = True #overrides the pruning and prevents it. just send the timeline as-is.
+            START_COUNT = 1
 
             #set up a trigger that filters out all leading days with very low count (less than 5)
             for day in timeline:
-                if len(timeline[day]['Total Boards']) > 4:
+                if len(timeline[day]['Total Boards']) >= START_COUNT:
                     START = True
                 if START:
                     if 'Done' in timeline[day]:
