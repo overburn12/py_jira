@@ -242,7 +242,8 @@ class JiraClient(JiraWrapper):
             "BHB68606",
             "BHB68603",
             "A3HB70601",
-            "BHB68701"
+            "BHB68701",
+            "BHB68703"
         ]
 
         serial = board_data.get("serial")
@@ -361,7 +362,7 @@ class JiraClient(JiraWrapper):
         return epic_data
 
 
-    def build_and_fill_epic_timeline(self, epic_key):
+    def build_and_fill_epic_timeline(self, epic_key, format_date = True):
             #creates a timeline container with total counts for each status for each day
             start_date, end_date = self.get_max_min_epic_dates(epic_key)
 
@@ -425,7 +426,7 @@ class JiraClient(JiraWrapper):
                     if day in timeline:
                         chassis_status = chassis_timeline[day]
                         chassis_obj = {"serial": issue.serial, "assignee": issue.assignee}
-                        if chassis_status is not None:
+                        if chassis_status in ["Ready to Ship"]:
                             if chassis_status not in status_list:
                                 status_list.append(chassis_status)
                             if chassis_status not in timeline[day]:
@@ -439,6 +440,7 @@ class JiraClient(JiraWrapper):
 
             pruned_timeline = {}
             START = False
+            START = True #overrides the pruning and prevents it. just send the timeline as-is.
 
             #set up a trigger that filters out all leading days with very low count (less than 5)
             for day in timeline:
@@ -446,7 +448,7 @@ class JiraClient(JiraWrapper):
                     START = True
                 if START:
                     if 'Done' in timeline[day]:
-                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards'])+len(timeline[day]['Total Chassis']): #stop when all boards are in 'done' state
+                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
                             break
                     pruned_timeline[day] = {}
                     for status in status_list:
@@ -455,6 +457,9 @@ class JiraClient(JiraWrapper):
                             if pruned_timeline[day][status] is None:
                                 pruned_timeline[day][status] = []
                             pruned_timeline[day][status] = timeline[day][status].copy()
+
+            if not format_date:
+                return pruned_timeline
 
             #jsonify cant serialize datetime as a key, so convert to iso format (YYYY-MM-DD)
             timeline_str_keys = {day.isoformat(): data for day, data in pruned_timeline.items()}
@@ -470,36 +475,8 @@ class JiraClient(JiraWrapper):
         summary_data = []
 
         for epic_key in self.epics:
-            epic = self.epics[epic_key]
-
-            board_count = len(epic.tasks)
-            chassis_count = len(epic.stories)
-
-            done_count = 0
-            for issue in self.epics[epic_key].tasks:
-                last_status = issue.status_history[-1].to_status
-                if last_status == 'Done':
-                    done_count += 1
-            is_closed = "Open"
-            if done_count == board_count:
-                if done_count != 0:
-                    is_closed = "Closed"
-                else:
-                    is_closed = ""
-
-            epic_timeline = self.build_and_fill_epic_timeline(epic_key)
-            scrap_list = {}
-
-
-            summary_data.append({
-                "rt_num": epic.key,
-                "summary": epic.title,
-                "created": epic.start_date,
-                "board_count": board_count,
-                'chassis_count': chassis_count,
-                'is_closed': is_closed,
-                'scrap_list': scrap_list
-            })
+            epic_summary = self.get_order_summary(epic_key)
+            summary_data.append(epic_summary)
 
         return {
             "labels": {
@@ -508,8 +485,8 @@ class JiraClient(JiraWrapper):
                 "created": "Created Date",
                 "board_count": "Board Count",
                 'chassis_count': "Chassis Count",
-                'is_closed': "Order Closed" ,
-                'scrap_list': "Scrap Count"
+                'is_closed': "Order Closed",
+                'status_counts': "Status Counts"
             },
             "order": [
                 "rt_num",
@@ -518,8 +495,55 @@ class JiraClient(JiraWrapper):
                 "board_count",
                 "chassis_count",
                 "is_closed",
-                "scrap_list"
+                "status_counts"
             ],
             "data": summary_data
+        }        
+
+
+    def get_order_summary(self, epic_key):
+
+        epic = self.epics[epic_key]
+
+        board_count = len(epic.tasks)
+        chassis_count = len(epic.stories)
+
+        done_count = 0
+        for issue in self.epics[epic_key].tasks:
+            last_status = issue.status_history[-1].to_status
+            if last_status == 'Done':
+                done_count += 1
+        is_closed = "Open"
+        if done_count == board_count:
+            if done_count != 0:
+                is_closed = "Closed"
+            else:
+                is_closed = ""
+
+        status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
+        if board_count > 0:
+            epic_timeline = self.build_and_fill_epic_timeline(epic_key=epic_key, format_date=False)
+            if epic_timeline:
+                last_day = None
+                for day in epic_timeline:
+                    last_day = day
+                last_day_data = epic_timeline[last_day]
+                for status in last_day_data:
+                    if status in status_counts:
+                        if last_day_data[status]:
+                            status_counts[status] = len(last_day_data[status])
+                reported_total = 0
+                for status in status_counts:
+                    reported_total += status_counts[status]
+                if board_count != reported_total:
+                    status_counts['_ERROR'] = F"MISSING {board_count - reported_total} BOARDS"
+
+        return {
+            "rt_num": epic.key,
+            "summary": epic.title,
+            "created": epic.start_date,
+            "board_count": board_count,
+            'chassis_count': chassis_count,
+            'is_closed': is_closed,
+            'status_counts': status_counts
         }
-    

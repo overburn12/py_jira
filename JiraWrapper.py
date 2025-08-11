@@ -45,7 +45,7 @@ class JiraWrapper:
 
                 issue_file = os.path.join(self.data_directory,f"{key}.json")
                 if os.path.exists(issue_file):
-                    with open(issue_file, "r") as issue_f:
+                    with open(issue_file, "r", encoding="utf-8") as issue_f:
                         issue_data = json.load(issue_f)
                         epic.load_json(issue_data)
 
