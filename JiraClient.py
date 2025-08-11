@@ -439,12 +439,22 @@ class JiraClient(JiraWrapper):
             #when hasboard replacement program is used, the hbr hashboard will mess up the timeline and greatly extend the beginning date
 
             pruned_timeline = {}
+            timeline_days = list(timeline.keys())
             START = False
             START_COUNT = 1
 
             #set up a trigger that filters out all leading days with very low count (less than 5)
             for day in timeline:
-                if len(timeline[day]['Total Boards']) >= START_COUNT:
+                current_day_meets_criteria = len(timeline[day]['Total Boards']) >= START_COUNT
+                next_day_meets_criteria = False
+                try:
+                    current_index = timeline_days.index(day)
+                    if current_index + 1 < len(timeline_days):
+                        next_day = timeline_days[current_index + 1]
+                        next_day_meets_criteria = len(timeline[next_day]['Total Boards']) >= START_COUNT
+                except ValueError:
+                    pass  # day not found in timeline_days (shouldn't happen)
+                if current_day_meets_criteria or next_day_meets_criteria:
                     START = True
                 if START:
                     if 'Done' in timeline[day]:
