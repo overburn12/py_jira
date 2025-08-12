@@ -16,14 +16,58 @@ async function loadOrders() {
     try {
         const response = await fetch('/api/get_orders');
         const orders = await response.json();
-        rtSelect.innerHTML = '';
-        
-        orders.forEach(order => {
+        rtSelect.innerHTML = '';  // Clear current options
+
+        // Sort orders into groups
+        const openOrders = orders.filter(order => order.is_closed === false);
+        const closedOrders = orders.filter(order => order.is_closed === true);
+        const emptyOrders = orders.filter(order => order.is_closed === null);
+
+        // Helper function to create header option
+        function createHeader(text) {
+            const header = document.createElement('option');
+            header.textContent = text;
+            header.disabled = true;
+            header.style.fontWeight = 'bold';
+            header.style.backgroundColor = '#f0f0f0';
+            header.style.color = '#333';
+            header.value = '';
+            return header;
+        }
+
+        // Helper function to create order option
+        function createOrderOption(order, colorStyle) {
             const option = document.createElement('option');
-            option.value = order.rt_num;  
+            option.value = order.rt_num;
             option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
-            rtSelect.appendChild(option);
-        });
+            option.style.color = colorStyle;
+            return option;
+        }
+
+        // Add Open Orders section
+        if (openOrders.length > 0) {
+            rtSelect.appendChild(createHeader('--- Open Orders ---'));
+            openOrders.forEach(order => {
+                rtSelect.appendChild(createOrderOption(order, '#000000')); // Normal black
+            });
+        }
+
+        // Add Closed Orders section
+        if (closedOrders.length > 0) {
+            rtSelect.appendChild(createHeader('--- Closed Orders ---'));
+            closedOrders.forEach(order => {
+                rtSelect.appendChild(createOrderOption(order, '#666666')); // Gray
+            });
+        }
+
+        // Add Empty Orders section
+        if (emptyOrders.length > 0) {
+            rtSelect.appendChild(createHeader('--- Empty Orders ---'));
+            emptyOrders.forEach(order => {
+                rtSelect.appendChild(createOrderOption(order, '#999999')); // Light gray
+            });
+        }
+
     } catch (error) {
         console.error('Failed to load orders:', error);
         rtSelect.innerHTML = '<option value="">Failed to load</option>';

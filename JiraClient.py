@@ -17,12 +17,12 @@ class JiraClient(JiraWrapper):
 
         for epic_key in self.epics:
             epic = self.epics[epic_key]
-            issue_count = len(epic.tasks)
             epic_list.append({
                 "rt_num": epic.key,
                 "summary": epic.title,
                 "created": epic.start_date,
-                "issue_count": issue_count
+                "is_closed": self.is_order_closed(epic_key),
+                "issue_count": len(epic.tasks)
             })
 
         return epic_list
@@ -511,6 +511,27 @@ class JiraClient(JiraWrapper):
         }        
 
 
+    def is_order_closed(self, epic_key):
+        """
+        returns true if the order is closed, returns false if the order is open, returns none if the order has no data.
+        an order is considered closed when all the tasks are in the 'Done' status on the same day.
+        """
+        epic = self.epics[epic_key]
+        board_count = len(epic.tasks)
+
+        done_count = 0
+        for issue in epic.tasks:
+            last_status = issue.status_history[-1].to_status
+            if last_status == 'Done':
+                done_count += 1
+        if done_count == board_count:
+            if done_count != 0:
+                return True
+            else:
+                return None
+        return False
+
+
     def get_order_summary(self, epic_key):
 
         epic = self.epics[epic_key]
@@ -518,17 +539,12 @@ class JiraClient(JiraWrapper):
         board_count = len(epic.tasks)
         chassis_count = len(epic.stories)
 
-        done_count = 0
-        for issue in self.epics[epic_key].tasks:
-            last_status = issue.status_history[-1].to_status
-            if last_status == 'Done':
-                done_count += 1
+        order_state = self.is_order_closed(epic_key)
         is_closed = "Open"
-        if done_count == board_count:
-            if done_count != 0:
-                is_closed = "Closed"
-            else:
-                is_closed = ""
+        if order_state:
+            is_closed = "Closed"
+        if order_state is None:
+            is_closed = ""
 
         status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
         if board_count > 0:
