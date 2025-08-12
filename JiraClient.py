@@ -530,23 +530,14 @@ class JiraClient(JiraWrapper):
             else:
                 return None
         return False
+    
 
-
-    def get_order_summary(self, epic_key):
-
+    def get_board_counts_OLD(self, epic_key):
         epic = self.epics[epic_key]
-
         board_count = len(epic.tasks)
-        chassis_count = len(epic.stories)
-
-        order_state = self.is_order_closed(epic_key)
-        is_closed = "Open"
-        if order_state:
-            is_closed = "Closed"
-        if order_state is None:
-            is_closed = ""
 
         status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
+
         if board_count > 0:
             epic_timeline = self.build_and_fill_epic_timeline(epic_key=epic_key, format_date=False)
             if epic_timeline:
@@ -563,6 +554,63 @@ class JiraClient(JiraWrapper):
                     reported_total += status_counts[status]
                 if board_count != reported_total:
                     status_counts['_ERROR'] = F"MISSING {board_count - reported_total} BOARDS"
+        
+        return status_counts
+
+
+    def get_board_counts(self, epic_key):
+        epic = self.epics[epic_key]
+        board_count = len(epic.tasks)
+        status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
+        
+        if board_count > 0:
+            epic_timeline = self.build_and_fill_epic_timeline(epic_key=epic_key, format_date=False)
+            if epic_timeline:
+                # Get all days and reverse them to start from the last day
+                timeline_days = list(epic_timeline.keys())
+                timeline_days.reverse()  # Start from the most recent day
+                
+                for day in timeline_days:
+                    day_data = epic_timeline[day]
+                    temp_status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
+                    
+                    # Count statuses for this day
+                    for status in temp_status_counts:
+                        if status in day_data and day_data[status]:
+                            temp_status_counts[status] = len(day_data[status])
+                    
+                    # Check if this day's counts match the board_count
+                    reported_total = sum(temp_status_counts.values())
+                    
+                    if reported_total == board_count:
+                        # Found a matching day, return these counts
+                        return temp_status_counts
+                
+                # If we get here, no day matched - return counts from last day with error
+                last_day = timeline_days[0]  # First in reversed list is the last day
+                last_day_data = epic_timeline[last_day]
+                for status in status_counts:
+                    if status in last_day_data and last_day_data[status]:
+                        status_counts[status] = len(last_day_data[status])
+                
+                reported_total = sum(status_counts.values())
+                status_counts['_ERROR'] = f"MISSING {board_count - reported_total} BOARDS"
+        
+        return status_counts
+
+    def get_order_summary(self, epic_key):
+        epic = self.epics[epic_key]
+        board_count = len(epic.tasks)
+        chassis_count = len(epic.stories)
+
+        order_state = self.is_order_closed(epic_key)
+        is_closed = "Open"
+        if order_state:
+            is_closed = "Closed"
+        if order_state is None:
+            is_closed = ""
+
+        status_counts = self.get_board_counts(epic_key)
 
         return {
             "rt_num": epic.key,

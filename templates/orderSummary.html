@@ -40,12 +40,47 @@
 
       // Expecting: { labels: { key: "Label", ... }, data: [ { key: value, ... }, ... ] }
       const labels = payload.labels;
-      const data = payload.data;
+      let data = payload.data;
 
       if (!Array.isArray(data) || typeof labels !== 'object') {
         container.textContent = 'Invalid data format.';
         return;
       }
+
+      // Sort data by "Order Closed" status
+      // Priority: blank/none/empty first, then "Open", then "Closed"
+      data = data.sort((a, b) => {
+        const getOrderClosedValue = (item) => {
+          // Find the key that corresponds to "Order Closed"
+          const orderClosedKey = Object.keys(labels).find(key => 
+            labels[key] === 'Order Closed' || key.toLowerCase().includes('order') && key.toLowerCase().includes('closed')
+          );
+          
+          if (!orderClosedKey) return '';
+          
+          const value = item[orderClosedKey];
+          if (!value || value === '' || value === null || value === undefined) {
+            return '';
+          }
+          return String(value).trim();
+        };
+
+        const aValue = getOrderClosedValue(a);
+        const bValue = getOrderClosedValue(b);
+
+        // Define sort priority: blank = 0, Open = 1, Closed = 2
+        const getSortPriority = (value) => {
+          if (!value || value === '') return 0; // blank first
+          if (value.toLowerCase() === 'open') return 1; // open second
+          if (value.toLowerCase() === 'closed') return 2; // closed last
+          return 3; // any other value goes at the end
+        };
+
+        const aPriority = getSortPriority(aValue);
+        const bPriority = getSortPriority(bValue);
+
+        return aPriority - bPriority;
+      });
 
       const table = document.createElement('table');
       table.style.borderCollapse = 'collapse';
