@@ -39,7 +39,11 @@ async function loadOrders() {
         function createOrderOption(order, colorStyle) {
             const option = document.createElement('option');
             option.value = order.rt_num;
-            option.textContent = ` (${order.created}) ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
+            
+            // Format date to YYYY-MM-DD
+            const formattedDate = new Date(order.created).toISOString().split('T')[0];
+            
+            option.textContent = `[${formattedDate}] ${order.rt_num} - ${order.summary} [${order.issue_count}]`;
             option.style.color = colorStyle;
             return option;
         }
@@ -52,19 +56,19 @@ async function loadOrders() {
             });
         }
 
-        // Add Closed Orders section
-        if (closedOrders.length > 0) {
-            rtSelect.appendChild(createHeader('--- Closed Orders ---'));
-            closedOrders.forEach(order => {
-                rtSelect.appendChild(createOrderOption(order, '#666666')); // Gray
-            });
-        }
-
         // Add Empty Orders section
         if (emptyOrders.length > 0) {
             rtSelect.appendChild(createHeader('--- Empty Orders ---'));
             emptyOrders.forEach(order => {
-                rtSelect.appendChild(createOrderOption(order, '#999999')); // Light gray
+                rtSelect.appendChild(createOrderOption(order, '#666666')); // Light gray
+            });
+        }
+
+        // Add Closed Orders section
+        if (closedOrders.length > 0) {
+            rtSelect.appendChild(createHeader('--- Closed Orders ---'));
+            closedOrders.forEach(order => {
+                rtSelect.appendChild(createOrderOption(order, '#999999')); // Gray
             });
         }
 
