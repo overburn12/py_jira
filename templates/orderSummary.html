@@ -3,12 +3,6 @@
 {% block title %} Order Summaries {% endblock %}
 
 {% block head %}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
-    <script>
-        Chart.register(window['chartjs-plugin-annotation']);
-    </script>
     <style>
         .element-block{
             width: 90%;
@@ -17,12 +11,38 @@
         #summary-container{
             padding: 0px;
         }
-
+        #search-container {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        #search-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        #search-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        .search-info {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #6c757d;
+        }
     </style>
 {% endblock %}
 
 {% block content %}
     {{ block_header('Order Summaries') }}
+        <div id="search-container">
+            <input type="text" id="search-input" placeholder="Search orders... (e.g. 'amd', 'lambda', order number, etc.)" />
+            <div class="search-info" id="search-info">Loading orders...</div>
+        </div>
         <div id="summary-container">
         </div>
     {{ block_footer() }}
@@ -30,114 +50,155 @@
 
 {% block script %}
 <script>
-  async function loadSummaryTable() {
+  let allOrdersData = null; // Cache for all orders data
+  let allLabels = null;
+  let columnKeys = null;
+
+  async function loadSummaryTable(searchTerm = '') {
     const container = document.getElementById('summary-container');
-    container.innerHTML = ''; // Clear old stuff
+    const searchInfo = document.getElementById('search-info');
+    
+    // If we don't have cached data yet, fetch it
+    if (!allOrdersData) {
+      container.innerHTML = ''; // Clear old stuff
+      searchInfo.textContent = 'Loading orders...';
 
-    try {
-      const response = await fetch('/api/get_all_summaries');
-      const payload = await response.json();
+      try {
+        const response = await fetch('/api/get_all_summaries');
+        const payload = await response.json();
 
-      // Expecting: { labels: { key: "Label", ... }, data: [ { key: value, ... }, ... ] }
-      const labels = payload.labels;
-      let data = payload.data;
+        // Expecting: { labels: { key: "Label", ... }, data: [ { key: value, ... }, ... ] }
+        allLabels = payload.labels;
+        allOrdersData = payload.data;
+        columnKeys = payload.order ?? Object.keys(allLabels);
 
-      if (!Array.isArray(data) || typeof labels !== 'object') {
-        container.textContent = 'Invalid data format.';
+        if (!Array.isArray(allOrdersData) || typeof allLabels !== 'object') {
+          container.textContent = 'Invalid data format.';
+          searchInfo.textContent = 'Error: Invalid data format';
+          return;
+        }
+
+        // Sort data by "Order Closed" status
+        // Priority: blank/none/empty first, then "Open", then "Closed"
+        allOrdersData = allOrdersData.sort((a, b) => {
+          const getOrderClosedValue = (item) => {
+            // Find the key that corresponds to "Order Closed"
+            const orderClosedKey = Object.keys(allLabels).find(key => 
+              allLabels[key] === 'Order Closed' || key.toLowerCase().includes('order') && key.toLowerCase().includes('closed')
+            );
+            
+            if (!orderClosedKey) return '';
+            
+            const value = item[orderClosedKey];
+            if (!value || value === '' || value === null || value === undefined) {
+              return '';
+            }
+            return String(value).trim();
+          };
+
+          const aValue = getOrderClosedValue(a);
+          const bValue = getOrderClosedValue(b);
+
+          // Define sort priority: blank = 0, Open = 1, Closed = 2
+          const getSortPriority = (value) => {
+            if (!value || value === '') return 0; // blank first
+            if (value.toLowerCase() === 'open') return 1; // open second
+            if (value.toLowerCase() === 'closed') return 2; // closed last
+            return 3; // any other value goes at the end
+          };
+
+          const aPriority = getSortPriority(aValue);
+          const bPriority = getSortPriority(bValue);
+
+          return aPriority - bPriority;
+        });
+
+      } catch (err) {
+        console.error('Failed to load summary table:', err);
+        container.textContent = 'Error loading summary data.';
+        searchInfo.textContent = 'Error loading data';
         return;
       }
-
-      // Sort data by "Order Closed" status
-      // Priority: blank/none/empty first, then "Open", then "Closed"
-      data = data.sort((a, b) => {
-        const getOrderClosedValue = (item) => {
-          // Find the key that corresponds to "Order Closed"
-          const orderClosedKey = Object.keys(labels).find(key => 
-            labels[key] === 'Order Closed' || key.toLowerCase().includes('order') && key.toLowerCase().includes('closed')
-          );
-          
-          if (!orderClosedKey) return '';
-          
-          const value = item[orderClosedKey];
-          if (!value || value === '' || value === null || value === undefined) {
-            return '';
-          }
-          return String(value).trim();
-        };
-
-        const aValue = getOrderClosedValue(a);
-        const bValue = getOrderClosedValue(b);
-
-        // Define sort priority: blank = 0, Open = 1, Closed = 2
-        const getSortPriority = (value) => {
-          if (!value || value === '') return 0; // blank first
-          if (value.toLowerCase() === 'open') return 1; // open second
-          if (value.toLowerCase() === 'closed') return 2; // closed last
-          return 3; // any other value goes at the end
-        };
-
-        const aPriority = getSortPriority(aValue);
-        const bPriority = getSortPriority(bValue);
-
-        return aPriority - bPriority;
-      });
-
-      const table = document.createElement('table');
-      table.style.borderCollapse = 'collapse';
-      table.style.width = '100%';
-
-      const thead = document.createElement('thead');
-      const headerRow = document.createElement('tr');
-
-      // Get the column order from the labels object
-      const columnKeys = payload.order ?? Object.keys(labels);
-      columnKeys.forEach(key => {
-        const th = document.createElement('th');
-        th.textContent = labels[key];
-        th.style.border = '1px solid black';
-        th.style.padding = '6px';
-        headerRow.appendChild(th);
-      });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      data.forEach(item => {
-        const row = document.createElement('tr');
-        columnKeys.forEach(key => {
-          const td = document.createElement('td');
-          let value = item[key] ?? '';
-          
-          // Special handling for Status Counts column
-          if (labels[key] === 'Status Counts' && typeof value === 'object' && value !== null) {
-            td.appendChild(createStatusBars(value, item));
-          } else {
-            if (key === 'created' && typeof value === 'string') {
-              try {
-                value = new Date(value).toISOString().split('T')[0];
-              } catch {
-                // fallback to raw value
-              }
-            }
-            if (typeof value === 'object' && value !== null) {
-              value = JSON.stringify(value);
-            }
-            td.textContent = value;
-          }
-          
-          td.style.border = '1px solid black';
-          td.style.padding = '6px';
-          row.appendChild(td);
-        });
-        tbody.appendChild(row);
-      });
-
-      table.appendChild(tbody);
-      container.appendChild(table);
-    } catch (err) {
-      console.error('Failed to load summary table:', err);
-      container.textContent = 'Error loading summary data.';
     }
+
+    // Filter data based on search term
+    let filteredData = allOrdersData;
+    if (searchTerm.trim() !== '') {
+      const searchLower = searchTerm.toLowerCase();
+      filteredData = allOrdersData.filter(item => {
+        // Search through all string values in the item
+        return Object.values(item).some(value => {
+          if (typeof value === 'string') {
+            return value.toLowerCase().includes(searchLower);
+          }
+          if (typeof value === 'number') {
+            return value.toString().includes(searchLower);
+          }
+          return false;
+        });
+      });
+    }
+
+    // Update search info
+    if (searchTerm.trim() !== '') {
+      searchInfo.textContent = `Showing ${filteredData.length} of ${allOrdersData.length} orders`;
+    } else {
+      searchInfo.textContent = `Showing all ${allOrdersData.length} orders`;
+    }
+
+    // Clear container and rebuild table
+    container.innerHTML = '';
+
+    const table = document.createElement('table');
+    table.style.borderCollapse = 'collapse';
+    table.style.width = '100%';
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+
+    columnKeys.forEach(key => {
+      const th = document.createElement('th');
+      th.textContent = allLabels[key];
+      th.style.border = '1px solid black';
+      th.style.padding = '6px';
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    filteredData.forEach(item => {
+      const row = document.createElement('tr');
+      columnKeys.forEach(key => {
+        const td = document.createElement('td');
+        let value = item[key] ?? '';
+        
+        // Special handling for Status Counts column
+        if (allLabels[key] === 'Status Counts' && typeof value === 'object' && value !== null) {
+          td.appendChild(createStatusBars(value, item));
+        } else {
+          if (key === 'created' && typeof value === 'string') {
+            try {
+              value = new Date(value).toISOString().split('T')[0];
+            } catch {
+              // fallback to raw value
+            }
+          }
+          if (typeof value === 'object' && value !== null) {
+            value = JSON.stringify(value);
+          }
+          td.textContent = value;
+        }
+        
+        td.style.border = '1px solid black';
+        td.style.padding = '6px';
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
   }
 
   // Create status bars for Status Counts column
@@ -204,13 +265,12 @@
       barsContainer.appendChild(progressBar);
     });
 
-    container.appendChild(barsContainer);
+    // Error indicator
     if (hasError) {
       const errorDiv = document.createElement('div');
       errorDiv.style.display = 'flex';
       errorDiv.style.alignItems = 'center';
       errorDiv.style.gap = '4px';
-      errorDiv.style.marginTop = '2px';
       errorDiv.style.fontSize = '11px';
       errorDiv.style.color = '#dc3545';
       errorDiv.style.fontWeight = 'bold';
@@ -224,13 +284,32 @@
       errorText.textContent = statusData._ERROR;
       errorDiv.appendChild(errorText);
 
-      container.appendChild(errorDiv);
+      barsContainer.appendChild(errorDiv);
     }
+
+    container.appendChild(barsContainer);
 
     return container;
   }
 
+  // Search functionality
+  function setupSearch() {
+    const searchInput = document.getElementById('search-input');
+    let searchTimeout;
+
+    searchInput.addEventListener('input', function() {
+      // Debounce the search to avoid filtering on every keystroke
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        loadSummaryTable(this.value);
+      }, 300); // Wait 300ms after user stops typing
+    });
+  }
+
   // Load on page load
-  document.addEventListener('DOMContentLoaded', loadSummaryTable);
+  document.addEventListener('DOMContentLoaded', function() {
+    setupSearch();
+    loadSummaryTable();
+  });
 </script>
 {% endblock %}
