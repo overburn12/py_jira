@@ -107,17 +107,24 @@
         columnKeys.forEach(key => {
           const td = document.createElement('td');
           let value = item[key] ?? '';
-          if (key === 'created' && typeof value === 'string') {
-            try {
-              value = new Date(value).toISOString().split('T')[0];
-            } catch {
-              // fallback to raw value
+          
+          // Special handling for Status Counts column
+          if (labels[key] === 'Status Counts' && typeof value === 'object' && value !== null) {
+            td.appendChild(createStatusBars(value, item));
+          } else {
+            if (key === 'created' && typeof value === 'string') {
+              try {
+                value = new Date(value).toISOString().split('T')[0];
+              } catch {
+                // fallback to raw value
+              }
             }
+            if (typeof value === 'object' && value !== null) {
+              value = JSON.stringify(value);
+            }
+            td.textContent = value;
           }
-          if (typeof value === 'object' && value !== null) {
-            value = JSON.stringify(value);
-          }
-          td.textContent = value;
+          
           td.style.border = '1px solid black';
           td.style.padding = '6px';
           row.appendChild(td);
@@ -133,8 +140,97 @@
     }
   }
 
+  // Create status bars for Status Counts column
+  function createStatusBars(statusData, item) {
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    
+    const barsContainer = document.createElement('div');
+    barsContainer.style.display = 'flex';
+    barsContainer.style.flexDirection = 'row';
+    barsContainer.style.gap = '4px';
+    barsContainer.style.minWidth = '360px';
+
+    const scrap = statusData.Scrap || 0;
+    const awaiting = statusData['Awaiting Functional Test'] || 0;
+    const passed = statusData['Passed Initial Diagnosis'] || 0;
+    const hasError = statusData._ERROR;
+    
+    // Get total from board_count if available, otherwise sum the values
+    const boardCount = item.board_count || (scrap + awaiting + passed);
+    const total = boardCount > 0 ? boardCount : 1; // Avoid division by zero
+
+    const categories = [
+      { value: scrap, color: '#dc3545', lightColor: '#f8d7da' },
+      { value: awaiting, color: '#007bff', lightColor: '#d1ecf1' },
+      { value: passed, color: '#28a745', lightColor: '#d4edda' }
+    ];
+
+    categories.forEach(category => {
+      // Progress bar container
+      const progressBar = document.createElement('div');
+      progressBar.style.width = '120px';
+      progressBar.style.height = '16px';
+      progressBar.style.border = '1px solid #ccc';
+      progressBar.style.borderRadius = '3px';
+      progressBar.style.overflow = 'hidden';
+      progressBar.style.position = 'relative';
+      progressBar.style.backgroundColor = hasError ? '#e9ecef' : category.lightColor;
+
+      // Progress fill
+      const progressFill = document.createElement('div');
+      const percentage = (category.value / total) * 100;
+      progressFill.style.width = `${Math.min(percentage, 100)}%`;
+      progressFill.style.height = '100%';
+      progressFill.style.backgroundColor = hasError ? '#6c757d' : category.color;
+      progressFill.style.transition = 'width 0.3s ease';
+
+      // Overlay text
+      const overlayText = document.createElement('div');
+      overlayText.textContent = `${percentage.toFixed(1)}% (${category.value})`;
+      overlayText.style.position = 'absolute';
+      overlayText.style.top = '50%';
+      overlayText.style.left = '4px';
+      overlayText.style.transform = 'translateY(-50%)';
+      overlayText.style.fontSize = '11px';
+      overlayText.style.fontWeight = 'bold';
+      overlayText.style.color = 'white';
+      overlayText.style.textShadow = '1px 1px 1px rgba(0,0,0,0.5)';
+      overlayText.style.pointerEvents = 'none';
+
+      progressBar.appendChild(progressFill);
+      progressBar.appendChild(overlayText);
+      barsContainer.appendChild(progressBar);
+    });
+
+    container.appendChild(barsContainer);
+    if (hasError) {
+      const errorDiv = document.createElement('div');
+      errorDiv.style.display = 'flex';
+      errorDiv.style.alignItems = 'center';
+      errorDiv.style.gap = '4px';
+      errorDiv.style.marginTop = '2px';
+      errorDiv.style.fontSize = '11px';
+      errorDiv.style.color = '#dc3545';
+      errorDiv.style.fontWeight = 'bold';
+
+      const exclamation = document.createElement('span');
+      exclamation.textContent = '⚠️';
+      exclamation.style.color = '#dc3545';
+      errorDiv.appendChild(exclamation);
+
+      const errorText = document.createElement('span');
+      errorText.textContent = statusData._ERROR;
+      errorDiv.appendChild(errorText);
+
+      container.appendChild(errorDiv);
+    }
+
+    return container;
+  }
+
   // Load on page load
   document.addEventListener('DOMContentLoaded', loadSummaryTable);
 </script>
-
 {% endblock %}
