@@ -37,20 +37,21 @@
 {% endblock %}
 
 {% block content %}
-    {{ block_header('Order Repair Timeline') }}
-        <form id="rt-form">
-            <button type="button" id="update-button">Update Order</button>
-        </form>
+    <div class="element-block">
+        <div class="element-header">
+            <h1><a href="/"><img src="/favicon.ico"></a> <span id="page-title">Order Repair Timeline</span></h1>
+        </div>
         <div style="position: relative; height: 100%; width: 100%;">
             <canvas id="timeline-chart"></canvas><br>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" id="update-button">Update Order</button>
             <progress id="progressBar" value="0" max="1" style="width: 100%; display: none;"></progress>
             <span id="progressLabel" style="font-size: 12px; display: none;"></span>
         </div>
         <div id="chart-info" style="margin-top: 20px;"></div>
         <textarea id="response" readonly style="display: none;"></textarea>
-    {{ block_footer() }}
+    </div>
 {% endblock %}
 
 {% block script %}

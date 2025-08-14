@@ -68,10 +68,86 @@
       transform: scaleX(1);
       transform-origin: left;
     }
+    
+    /* Navigation styles */
+    .navbar {
+      width: 100%;
+      background-color: #6B4F3A;
+      padding: 15px 20px;
+      box-sizing: border-box;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      color: white;
+      text-decoration: none;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    
+    .nav-logo img {
+      margin-right: 10px;
+      width: 20px;
+      height: 20px;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 25px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .nav-links li {
+      margin: 0;
+    }
+    
+    .nav-links a {
+      color: white;
+      text-decoration: none;
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      transition: background-color 0.3s ease;
+    }
+    
+    .nav-links a:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .nav-links a::after {
+      display: none;
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
+    <nav class="navbar">
+      <div class="nav-container">
+        <a href="/" class="nav-logo">
+          <img src="/favicon.ico" alt="Logo">
+          JIRA Script Menu
+        </a>
+        <ul class="nav-links">
+          <li><a href="/summary">Order Summaries</a></li>
+          <li><a href="/multiorder">Multiple Order Timeline</a></li>
+          <li><a href="/repair">Repair Time Summary</a></li>
+          <li><a href="static/manifest.json">manifest.json</a></li>
+          <li><a href="static/content.js">content.js</a></li>
+        </ul>
+      </div>
+    </nav>
     {% block content %}{% endblock %}
     {% block script %}{% endblock %}
 </body>

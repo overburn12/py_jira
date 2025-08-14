@@ -21,7 +21,7 @@ client = JiraClient()
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template('menu.html')
+    return render_template('orderSummary.html')
 
 
 @app.route('/repair', methods=['GET'])

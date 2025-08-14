@@ -28,6 +28,12 @@ async function loadTimelineData(rtValue) {
         window.timeline = data_raw.timeline;
         window.epic_key = data_raw.rt;
 
+        // Update the page header with the dynamic title
+        const pageTitle = document.getElementById('page-title');
+        if (pageTitle && data_raw.title) {
+            pageTitle.textContent = data_raw.title;
+        }
+
         data = formatTimelineForChartjs(data_raw);
         
         // Clear old chart if it exists
@@ -412,8 +418,7 @@ async function renderChart(data){
             responsive: true,
             plugins: {
                 title: {
-                    display: true,
-                    text: data.title || `Timeline for RT ${data.title}`
+                    display: false
                 },
                 legend: {
                     display: true,
@@ -704,7 +709,12 @@ document.getElementById('update-button').addEventListener('click', async () => {
 
     progressBar.value = maxIssues;
     progressBar.style.display = 'none';
-    progressLabel.style.display = 'none';        
+    progressLabel.style.display = 'none';
+    
+    // Reload the timeline data to refresh the chart with updated information
+    if (currentOrderKey) {
+        await loadTimelineData(currentOrderKey);
+    }
     
 });
 
