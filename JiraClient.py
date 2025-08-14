@@ -10,6 +10,19 @@ from datetime import datetime
 class JiraClient(JiraWrapper):
     def __init__(self):
         super().__init__()
+        self.holidays = [
+            "2025-01-01",  # New Year's Day
+            "2025-01-20",  # MLK Jr. Day
+            "2025-02-17",  # Presidents' Day
+            "2025-05-26",  # Memorial Day
+            "2025-06-19",  # Juneteenth
+            "2025-07-04",  # Independence Day
+            "2025-09-01",  # Labor Day
+            "2025-10-13",  # Columbus Day
+            "2025-11-11",  # Veterans Day
+            "2025-11-27",  # Thanksgiving
+            "2025-12-25"   # Christmas
+        ]
 
 
     def get_all_rt_epics(self):
@@ -585,7 +598,8 @@ class JiraClient(JiraWrapper):
                 'status_counts': "Status Counts",
                 'first_date': "Start Date",
                 'last_date': "End Date",
-                'day_count': "Days"
+                'day_count': "Days",
+                'process_rate': "per Day"
             },
             "order": [
                 "rt_num",
@@ -596,6 +610,7 @@ class JiraClient(JiraWrapper):
                 "first_date",
                 "last_date",
                 "day_count",
+                "process_rate",
                 "is_closed",
                 "status_counts"
             ],
@@ -692,6 +707,11 @@ class JiraClient(JiraWrapper):
             last_date_obj = last_date.date() if hasattr(last_date, 'date') else last_date
             day_count = (last_date_obj - first_date_obj).days
 
+        # Calculate process rate (boards per day)
+        process_rate = 0
+        if day_count > 0:
+            process_rate = round(board_count / day_count, 1)
+
         return {
             "rt_num": epic.key,
             "summary": epic.title,
@@ -702,5 +722,6 @@ class JiraClient(JiraWrapper):
             'status_counts': status_counts,
             'first_date': first_date_str,
             'last_date': last_date_str,
-            'day_count': day_count
+            'day_count': day_count,
+            'process_rate': process_rate
         }
