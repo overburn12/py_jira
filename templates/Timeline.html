@@ -17,12 +17,6 @@
             margin-bottom: 20px;
         }
         
-        #rt-selection {
-            width: 200px;
-            height: 25px;
-            font-size: 16px;
-            padding: 5px;
-        }
         .element-block{
             width: 90%;
             height: 90%;
@@ -45,16 +39,7 @@
 {% block content %}
     {{ block_header('Order Repair Timeline') }}
         <form id="rt-form">
-            <label for="rt_number">Select RT Number:</label>
-            <select id="rt_number" name="rt_number">
-                <option value="">Loading...</option>
-            </select>
-            <button type="button" id="load-button">Load Order</button>
             <button type="button" id="update-button">Update Order</button>
-            <input type="radio" id="option1" name="radio-group" value="Totals" checked>
-            <label for="option1">Totals</label>
-            <input type="radio" id="option2" name="radio-group" value="Changes">
-            <label for="option2">Changes</label>
         </form>
         <div style="position: relative; height: 100%; width: 100%;">
             <canvas id="timeline-chart"></canvas><br>
@@ -69,6 +54,5 @@
 {% endblock %}
 
 {% block script %}
-    <script src="static/loadOrders.js"></script>
     <script src="static/timeline.js"></script>
 {% endblock %}

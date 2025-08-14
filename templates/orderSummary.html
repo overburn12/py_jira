@@ -176,6 +176,27 @@
         // Special handling for Status Counts column
         if (allLabels[key] === 'Status Counts' && typeof value === 'object' && value !== null) {
           td.appendChild(createStatusBars(value, item));
+        }
+        // Special handling for Summary column - make it a link to timeline
+        else if (allLabels[key] === 'Summary' || key === 'summary') {
+          if (key === 'created' && typeof value === 'string') {
+            try {
+              value = new Date(value).toISOString().split('T')[0];
+            } catch {
+              // fallback to raw value
+            }
+          }
+          if (typeof value === 'object' && value !== null) {
+            value = JSON.stringify(value);
+          }
+          
+          // Create a link to the timeline page using RT key
+          const link = document.createElement('a');
+          // Find the RT key from the item data (could be rt_num, rt_key, or similar)
+          const rtKey = item.rt_num || item.rt_key || item.key || value;
+          link.href = `/timeline?key=${encodeURIComponent(rtKey)}`;
+          link.textContent = value;
+          td.appendChild(link);
         } else {
           if (key === 'created' && typeof value === 'string') {
             try {

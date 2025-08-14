@@ -1,8 +1,24 @@
 const ctx = document.getElementById('timeline-chart').getContext('2d');
 let timelineChart = null;
+let currentOrderKey = null;
 
-document.getElementById('load-button').addEventListener('click', async () => {
-    const rtValue = rtSelect.value;;
+// Function to parse URL parameters
+function getUrlParameter(name) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(name);
+}
+
+// Auto-load order on page load
+window.addEventListener('DOMContentLoaded', () => {
+    const key = getUrlParameter('key');
+    if (key) {
+        currentOrderKey = key;
+        loadTimelineData(key);
+    }
+});
+
+// Function to load timeline data
+async function loadTimelineData(rtValue) {
     const infoDisplay = document.getElementById('chart-info');
 
     try {
@@ -12,12 +28,7 @@ document.getElementById('load-button').addEventListener('click', async () => {
         window.timeline = data_raw.timeline;
         window.epic_key = data_raw.rt;
 
-        const selectedRadioButton = document.querySelector('input[name="radio-group"]:checked');
-        if (selectedRadioButton.value === "Changes") {
-            data = formatTimelineForChartjsDelta(data_raw);
-        } else {
-            data = formatTimelineForChartjs(data_raw);
-        }
+        data = formatTimelineForChartjs(data_raw);
         
         // Clear old chart if it exists
         if (timelineChart) {
@@ -31,7 +42,6 @@ document.getElementById('load-button').addEventListener('click', async () => {
 
         infoDisplay.innerHTML = ''; //reset the serial list display
         renderChart(data);
-
 
         timelineChart.options.onClick = (event, elements) => {
             if (!elements.length) return;
@@ -57,8 +67,7 @@ document.getElementById('load-button').addEventListener('click', async () => {
         console.error('Error fetching timeline:', error);
         alert(`Failed to fetch timeline data: ${error.message}`);
     }
-
-});
+}
 
 
 function formatTimelineForChartjsDelta(epicData) {
@@ -612,4 +621,84 @@ function generateSerialList(dateStr, label) {
     serialDivContainer.append(wrapperDiv);
 
     return serialDivContainer;
+}
+
+// Update button functionality
+document.getElementById('update-button').addEventListener('click', async () => {
+    const rtNumber = currentOrderKey;
+    const progressBar = document.getElementById('progressBar');
+    const progressLabel = document.getElementById('progressLabel');
+
+    if (!rtNumber) {
+        alert('No order loaded. Please provide a key parameter in the URL.');
+        return;
+    }
+
+    textArea = document.getElementById('response');
+    textArea.value = '';
+
+    const response = await fetch('/api/update_issues', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ rt_number: rtNumber })
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let maxIssues = 0;
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep the last partial line (if any)
+
+        for (const line of lines) {
+            if (line.trim() === '') continue;
+            try {
+                const json = JSON.parse(line);
+            
+                if ('progress_update' in json) {
+                    progressBar.style.display = 'block'; // Show the bar
+                    progressLabel.style.display = 'block'; //show the progress label
+                    maxIssues = json.total;
+                    progressBar.max = json.total;
+                    progressBar.value = json.current;
+                    progressLabel.textContent = `${json.current}/${json.total}`;
+                } else {
+                    log(line);
+                }
+            } catch (err) {
+                log(`Error: ${err}`);
+            }
+            
+        }
+    }
+
+    // Handle final leftover
+    if (buffer.trim()) {
+        const json = JSON.parse(buffer);
+        const stringified = createHbString(json);
+        log(stringified);
+    }
+
+    progressBar.value = maxIssues;
+    progressBar.style.display = 'none';
+    progressLabel.style.display = 'none';        
+    
+});
+
+function log(data){
+    textArea = document.getElementById('response');
+    textArea.display = 'block';
+    textArea.value += data + '\n';
+
+    setTimeout(() => {
+        textArea.style.display = 'none';
+    }, 5000);
 }
