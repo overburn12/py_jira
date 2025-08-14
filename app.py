@@ -183,6 +183,28 @@ def api_get_total_epic():
         return jsonify({'error': 'error in get_total_epic'})
 
 
+@app.route('/api/get_holidays', methods=['GET'])
+def api_get_holidays():
+    try:
+        # Hardcoded holiday list for now
+        holidays = [
+            "2025-01-01",  # New Year’s Day
+            "2025-01-20",  # MLK Jr. Day
+            "2025-02-17",  # Presidents’ Day
+            "2025-05-26",  # Memorial Day
+            "2025-06-19",  # Juneteenth
+            "2025-07-04",  # Independence Day
+            "2025-09-01",  # Labor Day
+            "2025-10-13",  # Columbus Day
+            "2025-11-11",  # Veterans Day
+            "2025-11-27",  # Thanksgiving
+            "2025-12-25"   # Christmas
+        ]
+        return jsonify({'holidays': holidays})
+    except Exception as e:
+        return jsonify({'error': 'error in get_holidays'})
+
+
 #--------------------------------------------------------------------------------------
 
 @app.route('/favicon.ico')

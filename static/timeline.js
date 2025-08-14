@@ -41,7 +41,7 @@ async function loadTimelineData(rtValue) {
         }
 
         infoDisplay.innerHTML = ''; //reset the serial list display
-        renderChart(data);
+        await renderChart(data);
 
         timelineChart.options.onClick = (event, elements) => {
             if (!elements.length) return;
@@ -135,9 +135,21 @@ function changeDay(day, direction) {
 }
 
 
-function generateWeekendBoxes(dateLabels) {
+async function generateWeekendBoxes(dateLabels) {
     const annotations = [];
-    const holidayList = ['2025-05-26'];
+    
+    // Fetch holidays from API
+    let holidayList = ['2025-05-26']; // fallback
+    try {
+        const response = await fetch('/api/get_holidays');
+        const data = await response.json();
+        if (data.holidays && Array.isArray(data.holidays)) {
+            holidayList = data.holidays;
+        }
+    } catch (error) {
+        console.warn('Failed to fetch holidays, using fallback list:', error);
+    }
+    
     const holidaySet = new Set(holidayList); // for fast lookup
     let currentBox = null;
 
@@ -370,7 +382,7 @@ function toolTipCallBack_OLD(context) {
 }
 
 
-function renderChart(data){
+async function renderChart(data){
 
     // Extract labels and build datasets
     const labels = data.labels;
@@ -385,6 +397,9 @@ function renderChart(data){
             tension: 0.1
         };
     });
+
+    // Get weekend boxes (now async)
+    const weekendAnnotations = await generateWeekendBoxes(data.labels);
 
     // Build the chart
     timelineChart = new Chart(ctx, {
@@ -406,7 +421,7 @@ function renderChart(data){
                 },
                 annotation: {
                     display: true,
-                    annotations: generateWeekendBoxes(data.labels)
+                    annotations: weekendAnnotations
                 },
                 tooltip: {
                     callbacks: {
