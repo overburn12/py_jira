@@ -1,6 +1,7 @@
 from helper import logger, date_range
 from JiraWrapper import JiraWrapper
 from issueWrapper import Story, Task, Epic
+from datetime import datetime
 
 #-----------------------------------------------------------------------------------------------------------
 # JiraClient Class
@@ -305,20 +306,68 @@ class JiraClient(JiraWrapper):
 
     def get_max_min_epic_dates(self, epic_key):
         issues = self.epics[epic_key].tasks
-
+        epic = self.epics[epic_key]
 
         if not issues:
             return None, None
 
-        first_date = min(issue.created for issue in issues)
+        # First date should be the epic start date or the earliest relevant issue activity
+        epic_start_date = epic.start_date.date() if hasattr(epic.start_date, 'date') else epic.start_date
+        first_date = datetime.combine(epic_start_date, datetime.min.time())
 
-        last_dates = [
-            issue.status_history[-1].timestamp
-            for issue in issues
-            if issue.status_history
-        ]
-
-        last_date = max(last_dates) if last_dates else None
+        # Find the first date when all tasks are in 'Done' status
+        last_date = None
+        
+        # Get all possible dates from status history across all issues, but only on or after epic start date
+        all_dates = set()
+        for issue in issues:
+            if issue.status_history:
+                for change in issue.status_history:
+                    change_date = change.timestamp.date()
+                    # Only consider status changes on or after epic start date
+                    if change_date >= epic_start_date:
+                        all_dates.add(change_date)
+        
+        if all_dates:
+            # Sort dates chronologically
+            sorted_dates = sorted(all_dates)
+            
+            # Check each date to see if all tasks are 'Done'
+            for date in sorted_dates:
+                all_done = True
+                
+                for issue in issues:
+                    # Get the status of this issue on this date
+                    issue_status = None
+                    
+                    # Find the most recent status change on or before this date, but only consider changes on or after epic start date
+                    for change in sorted(issue.status_history, key=lambda x: x.timestamp):
+                        change_date = change.timestamp.date()
+                        if change_date >= epic_start_date and change_date <= date:
+                            issue_status = change.to_status
+                        elif change_date > date:
+                            break
+                    
+                    # If this issue is not 'Done' on this date, not all are done
+                    if issue_status != 'Done':
+                        all_done = False
+                        break
+                
+                # If all issues are 'Done' on this date, this is our last_date
+                if all_done:
+                    last_date = datetime.combine(date, datetime.min.time())
+                    break
+        
+        # If no date found where all are 'Done', fall back to max of last status changes (but only after epic start date)
+        if last_date is None:
+            last_dates = []
+            for issue in issues:
+                if issue.status_history:
+                    for change in reversed(issue.status_history):  # Start from most recent
+                        if change.timestamp.date() >= epic_start_date:
+                            last_dates.append(change.timestamp)
+                            break
+            last_date = max(last_dates) if last_dates else None
 
         return first_date, last_date
 
@@ -443,7 +492,7 @@ class JiraClient(JiraWrapper):
             START = False
             START_COUNT = 1
 
-            #set up a trigger that filters out all leading days with very low count (less than 5)
+            #set up a trigger that filters out all leading days with very low count (less than START_COUNT value)
             for day in timeline:
                 current_day_meets_criteria = len(timeline[day]['Total Boards']) >= START_COUNT
                 next_day_meets_criteria = False
@@ -496,14 +545,18 @@ class JiraClient(JiraWrapper):
                 "board_count": "Board Count",
                 'chassis_count': "Chassis Count",
                 'is_closed': "Order Closed",
-                'status_counts': "Status Counts"
+                'status_counts': "Status Counts",
+                'first_date': "Start Date",
+                'last_date': "End Date"
             },
             "order": [
                 "rt_num",
-                "summary",
                 "created",
+                "summary",
                 "board_count",
                 "chassis_count",
+                "first_date",
+                "last_date",
                 "is_closed",
                 "status_counts"
             ],
@@ -531,32 +584,6 @@ class JiraClient(JiraWrapper):
                 return None
         return False
     
-
-    def get_board_counts_OLD(self, epic_key):
-        epic = self.epics[epic_key]
-        board_count = len(epic.tasks)
-
-        status_counts = {"Passed Initial Diagnosis": 0, "Awaiting Functional Test": 0, "Scrap": 0}
-
-        if board_count > 0:
-            epic_timeline = self.build_and_fill_epic_timeline(epic_key=epic_key, format_date=False)
-            if epic_timeline:
-                last_day = None
-                for day in epic_timeline:
-                    last_day = day
-                last_day_data = epic_timeline[last_day]
-                for status in last_day_data:
-                    if status in status_counts:
-                        if last_day_data[status]:
-                            status_counts[status] = len(last_day_data[status])
-                reported_total = 0
-                for status in status_counts:
-                    reported_total += status_counts[status]
-                if board_count != reported_total:
-                    status_counts['_ERROR'] = F"MISSING {board_count - reported_total} BOARDS"
-        
-        return status_counts
-
 
     def get_board_counts(self, epic_key):
         epic = self.epics[epic_key]
@@ -611,6 +638,11 @@ class JiraClient(JiraWrapper):
             is_closed = ""
 
         status_counts = self.get_board_counts(epic_key)
+        first_date, last_date = self.get_max_min_epic_dates(epic_key)
+        
+        # Format dates to ISO format (YYYY-MM-DD) without time
+        first_date_str = first_date.strftime('%Y-%m-%d') if first_date else None
+        last_date_str = last_date.strftime('%Y-%m-%d') if last_date else None
 
         return {
             "rt_num": epic.key,
@@ -619,5 +651,7 @@ class JiraClient(JiraWrapper):
             "board_count": board_count,
             'chassis_count': chassis_count,
             'is_closed': is_closed,
-            'status_counts': status_counts
+            'status_counts': status_counts,
+            'first_date': first_date_str,
+            'last_date': last_date_str
         }
