@@ -304,16 +304,26 @@ class JiraClient(JiraWrapper):
 # Timeline Functions
 #-----------------------------------------------------------------------------------------------------------
 
-    def get_max_min_epic_dates(self, epic_key):
+    def epic_start_date(self, epic_key):
         issues = self.epics[epic_key].tasks
         epic = self.epics[epic_key]
 
         if not issues:
-            return None, None
+            return None
 
         # First date should be the epic start date or the earliest relevant issue activity
         epic_start_date = epic.start_date.date() if hasattr(epic.start_date, 'date') else epic.start_date
         first_date = datetime.combine(epic_start_date, datetime.min.time())
+        return first_date
+
+    def epic_end_date(self, epic_key):
+        issues = self.epics[epic_key].tasks
+        epic = self.epics[epic_key]
+
+        if not issues:
+            return None
+
+        epic_start_date = epic.start_date.date() if hasattr(epic.start_date, 'date') else epic.start_date
 
         # Find the first date when all tasks are in 'Done' status
         last_date = None
@@ -369,7 +379,10 @@ class JiraClient(JiraWrapper):
                             break
             last_date = max(last_dates) if last_dates else None
 
-        return first_date, last_date
+        return last_date
+
+    def get_max_min_epic_dates(self, epic_key):
+        return self.epic_start_date(epic_key), self.epic_end_date(epic_key)
 
 
 
@@ -621,7 +634,7 @@ class JiraClient(JiraWrapper):
                         status_counts[status] = len(last_day_data[status])
                 
                 reported_total = sum(status_counts.values())
-                status_counts['_ERROR'] = f"MISSING {board_count - reported_total} BOARDS"
+                status_counts['ERROR'] = f"MISSING {board_count - reported_total} BOARDS"
         
         return status_counts
 
