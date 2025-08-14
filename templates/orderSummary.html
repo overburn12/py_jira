@@ -237,7 +237,7 @@
     const scrap = statusData.Scrap || 0;
     const awaiting = statusData['Awaiting Functional Test'] || 0;
     const passed = statusData['Passed Initial Diagnosis'] || 0;
-    const hasError = statusData._ERROR;
+    const hasError = statusData.ERROR;
     
     // Get total from board_count if available, otherwise sum the values
     const boardCount = item.board_count || (scrap + awaiting + passed);
@@ -302,7 +302,7 @@
       errorDiv.appendChild(exclamation);
 
       const errorText = document.createElement('span');
-      errorText.textContent = statusData._ERROR;
+      errorText.textContent = statusData.ERROR;
       errorDiv.appendChild(errorText);
 
       barsContainer.appendChild(errorDiv);

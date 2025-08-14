@@ -408,6 +408,15 @@ class JiraClient(JiraWrapper):
         return timeline
 
 
+    def get_first_date_from_timeline(self, epic_key):
+        timeline = self.build_and_fill_epic_timeline(epic_key, format_date=False)
+        if timeline is None:
+            return None
+        timeline_keys = list(timeline.keys())
+        if timeline_keys:
+            return min(timeline_keys)
+        return None
+
     def create_epic_timeline_data(self, epic_key):
     #used for sending packaged data to front end
 
@@ -519,9 +528,24 @@ class JiraClient(JiraWrapper):
                 if current_day_meets_criteria or next_day_meets_criteria:
                     START = True
                 if START:
-                    if 'Done' in timeline[day]:
-                        if len(timeline[day]['Done']) == len(timeline[day]['Total Boards']): #stop when all boards are in 'done' state
+                    pruned_timeline[day] = {}
+                    for status in status_list:
+                        pruned_timeline[day][status] = None
+                        if status in timeline[day]:
+                            if pruned_timeline[day][status] is None:
+                                pruned_timeline[day][status] = []
+                            pruned_timeline[day][status] = timeline[day][status].copy()
+                    
+                    # Only break if we've processed many days AND all boards are done AND we have a significant number of boards
+                    # This prevents premature termination when some boards start in Done status
+                    if (len(pruned_timeline) > 10 and 'Done' in timeline[day] and 
+                        len(timeline[day]['Total Boards']) > 50 and 
+                        len(timeline[day]['Done']) == len(timeline[day]['Total Boards'])):
                             break
+
+            # Fallback: If no days met the start criteria, include all timeline data
+            if not START:
+                for day in timeline:
                     pruned_timeline[day] = {}
                     for status in status_list:
                         pruned_timeline[day][status] = None
@@ -560,7 +584,8 @@ class JiraClient(JiraWrapper):
                 'is_closed': "Order Closed",
                 'status_counts': "Status Counts",
                 'first_date': "Start Date",
-                'last_date': "End Date"
+                'last_date': "End Date",
+                'day_count': "Days"
             },
             "order": [
                 "rt_num",
@@ -570,6 +595,7 @@ class JiraClient(JiraWrapper):
                 "chassis_count",
                 "first_date",
                 "last_date",
+                "day_count",
                 "is_closed",
                 "status_counts"
             ],
@@ -651,11 +677,20 @@ class JiraClient(JiraWrapper):
             is_closed = ""
 
         status_counts = self.get_board_counts(epic_key)
-        first_date, last_date = self.get_max_min_epic_dates(epic_key)
+        first_date = self.get_first_date_from_timeline(epic_key)
+        _, last_date = self.get_max_min_epic_dates(epic_key)
         
         # Format dates to ISO format (YYYY-MM-DD) without time
         first_date_str = first_date.strftime('%Y-%m-%d') if first_date else None
         last_date_str = last_date.strftime('%Y-%m-%d') if last_date else None
+        
+        # Calculate day count (how many days the order was active)
+        day_count = 0
+        if first_date and last_date:
+            # Handle both datetime and date objects
+            first_date_obj = first_date.date() if hasattr(first_date, 'date') else first_date
+            last_date_obj = last_date.date() if hasattr(last_date, 'date') else last_date
+            day_count = (last_date_obj - first_date_obj).days
 
         return {
             "rt_num": epic.key,
@@ -666,5 +701,6 @@ class JiraClient(JiraWrapper):
             'is_closed': is_closed,
             'status_counts': status_counts,
             'first_date': first_date_str,
-            'last_date': last_date_str
+            'last_date': last_date_str,
+            'day_count': day_count
         }
