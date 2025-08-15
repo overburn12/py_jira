@@ -84,7 +84,7 @@
           const getOrderClosedValue = (item) => {
             // Find the key that corresponds to "Order Closed"
             const orderClosedKey = Object.keys(allLabels).find(key => 
-              allLabels[key] === 'Order Closed' || key.toLowerCase().includes('order') && key.toLowerCase().includes('closed')
+              allLabels[key] === 'Order State' || key.toLowerCase().includes('order') && key.toLowerCase().includes('closed')
             );
             
             if (!orderClosedKey) return '';

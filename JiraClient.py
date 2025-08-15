@@ -1,7 +1,7 @@
 from helper import logger, date_range
 from JiraWrapper import JiraWrapper
 from issueWrapper import Story, Task, Epic
-from datetime import datetime
+from datetime import datetime, timedelta
 
 #-----------------------------------------------------------------------------------------------------------
 # JiraClient Class
@@ -24,6 +24,34 @@ class JiraClient(JiraWrapper):
             "2025-12-25"   # Christmas
         ]
 
+    def calculate_business_days(self, start_date, end_date):
+        """Calculate number of business days between two dates, excluding weekends and federal holidays."""
+        if not start_date or not end_date:
+            return 0
+            
+        # Convert to date objects if they're datetime objects
+        start_date_obj = start_date.date() if hasattr(start_date, 'date') else start_date
+        end_date_obj = end_date.date() if hasattr(end_date, 'date') else end_date
+        
+        # Convert holiday strings to date objects
+        holiday_dates = set()
+        for holiday_str in self.holidays:
+            try:
+                holiday_date = datetime.strptime(holiday_str, "%Y-%m-%d").date()
+                holiday_dates.add(holiday_date)
+            except ValueError:
+                continue
+        
+        business_days = 0
+        current_date = start_date_obj
+        
+        while current_date <= end_date_obj:
+            # Check if it's a weekday (Monday=0, Sunday=6) and not a holiday
+            if current_date.weekday() < 5 and current_date not in holiday_dates:
+                business_days += 1
+            current_date += timedelta(days=1)
+        
+        return business_days
 
     def get_all_rt_epics(self):
         #returns json object for front-end order selection
@@ -475,7 +503,7 @@ class JiraClient(JiraWrapper):
                 "Backlog": "Awaiting Advanced Repair"
             }
 
-            total_good = ['Awaiting Functional Test', 'Passed Initial Diagnosis']
+            total_proccessed = ['Awaiting Functional Test', 'Passed Initial Diagnosis', 'Scrap', 'Done']
 
             #insert each hashboard timeline into the epic timeline
             for issue in issues:
@@ -487,9 +515,7 @@ class JiraClient(JiraWrapper):
                     hb_status = hb_timeline[day]
                     hb_obj = {"serial": issue.serial, 'assignee': issue.assignee, 'board_model': issue.board_model}
                     if hb_status is not None:
-                        if hb_status in total_good:
-                            timeline[day]['Total Processed'].append(hb_obj)
-                        if hb_status in 'Scrap':
+                        if hb_status in total_proccessed:
                             timeline[day]['Total Processed'].append(hb_obj)
                         if hb_status in convert_status:
                             hb_status = convert_status[hb_status] 
@@ -510,7 +536,7 @@ class JiraClient(JiraWrapper):
                     if day in timeline:
                         chassis_status = chassis_timeline[day]
                         chassis_obj = {"serial": issue.serial, "assignee": issue.assignee}
-                        if chassis_status in ["Ready to Ship"]:
+                        if chassis_status in ["Ready to Ship"] and chassis_status not in ["Done"]:
                             if chassis_status not in status_list:
                                 status_list.append(chassis_status)
                             if chassis_status not in timeline[day]:
@@ -541,6 +567,10 @@ class JiraClient(JiraWrapper):
                 if current_day_meets_criteria or next_day_meets_criteria:
                     START = True
                 if START:
+                    if ('Done' in timeline[day] and 
+                        len(timeline[day]['Done']) == len(timeline[day]['Total Boards'])):
+                            break
+                    
                     pruned_timeline[day] = {}
                     for status in status_list:
                         pruned_timeline[day][status] = None
@@ -548,13 +578,6 @@ class JiraClient(JiraWrapper):
                             if pruned_timeline[day][status] is None:
                                 pruned_timeline[day][status] = []
                             pruned_timeline[day][status] = timeline[day][status].copy()
-                    
-                    # Only break if we've processed many days AND all boards are done AND we have a significant number of boards
-                    # This prevents premature termination when some boards start in Done status
-                    if (len(pruned_timeline) > 10 and 'Done' in timeline[day] and 
-                        len(timeline[day]['Total Boards']) > 50 and 
-                        len(timeline[day]['Done']) == len(timeline[day]['Total Boards'])):
-                            break
 
             # Fallback: If no days met the start criteria, include all timeline data
             if not START:
@@ -592,12 +615,12 @@ class JiraClient(JiraWrapper):
                 "rt_num": "Epic Key",
                 "summary": "Summary",
                 "created": "Created Date",
-                "board_count": "Board Count",
-                'chassis_count': "Chassis Count",
-                'is_closed': "Order Closed",
+                "board_count": "Boards",
+                'chassis_count': "Chassis",
+                'is_closed': "Order State",
                 'status_counts': "Status Counts",
                 'first_date': "Start Date",
-                'last_date': "End Date",
+                'last_date': "Close Date",
                 'day_count': "Days",
                 'process_rate': "per Day"
             },
@@ -699,13 +722,10 @@ class JiraClient(JiraWrapper):
         first_date_str = first_date.strftime('%Y-%m-%d') if first_date else None
         last_date_str = last_date.strftime('%Y-%m-%d') if last_date else None
         
-        # Calculate day count (how many days the order was active)
+        # Calculate day count (how many business days the order was active)
         day_count = 0
         if first_date and last_date:
-            # Handle both datetime and date objects
-            first_date_obj = first_date.date() if hasattr(first_date, 'date') else first_date
-            last_date_obj = last_date.date() if hasattr(last_date, 'date') else last_date
-            day_count = (last_date_obj - first_date_obj).days
+            day_count = self.calculate_business_days(first_date, last_date)
 
         # Calculate process rate (boards per day)
         process_rate = 0
