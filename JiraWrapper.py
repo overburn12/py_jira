@@ -2,7 +2,8 @@ from jira import JIRA
 from jira.exceptions import JIRAError
 from datetime import datetime
 from dotenv import load_dotenv
-import os, time, json
+import os, time, json, requests
+from requests.auth import HTTPBasicAuth
 
 from helper import logger, full_rt
 from issueWrapper import Epic
@@ -65,13 +66,16 @@ class JiraWrapper:
             return None
 
 
-    def search_issues(self, jql_str, max_retries=10, batch_size=100, paginate=True, expand=None, yield_progress=False, **kwargs):
+    def search_issues_v3(self, jql_str, max_retries=10, batch_size=100, paginate=True, expand=None, yield_progress=False, **kwargs):
+        """Uses the new Jira API v3 search endpoint with token-based pagination"""
         if not self.jira:
             logger.error("No JIRA connection.")
             return
 
         retries = 0
-        start_at = 0
+        next_page_token = None
+        total_count = 0
+        current_count = 0
 
         while True:
             elapsed = time.time() - self.last_request_time
@@ -79,48 +83,102 @@ class JiraWrapper:
                 time.sleep(self.RATE_LIMIT_DELAY - elapsed)
 
             try:
-                issues = self.jira.search_issues(
-                    jql_str,
-                    startAt=start_at,
-                    maxResults=batch_size,
-                    expand=expand,
-                    **kwargs
-                )
-                self.last_request_time = time.time()
+                # Build the API URL for v3 search
+                url = f"{self.server}/rest/api/3/search/jql"
+                
+                # Prepare parameters
+                params = {
+                    "jql": jql_str,
+                    "maxResults": batch_size,
+                    "fields": "key,summary,created,assignee,status,issuetype,project,customfield_10014,customfield_10153,customfield_10230,customfield_10229,customfield_10245,comment,issuelinks"
+                }
+                
+                # For v3 API, we need to include changelog in fields and use expand
+                if expand and "changelog" in expand:
+                    params["expand"] = "changelog"
+                elif expand:
+                    params["expand"] = expand
+                
+                if next_page_token:
+                    params["nextPageToken"] = next_page_token
 
+                # Make the request
+                response = requests.get(
+                    url, 
+                    params=params,
+                    auth=HTTPBasicAuth(self.email, self.token),
+                    verify=self.root_cert if self.root_cert else True
+                )
+                
+                self.last_request_time = time.time()
+                
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 10))
+                    logger.warning(f"[Retry {retries+1}/{max_retries}] 429 Too Many Requests - Backing off for {retry_after} seconds...")
+                    time.sleep(retry_after)
+                    retries += 1
+                    if retries > max_retries:
+                        logger.warning("Max retries reached.")
+                        break
+                    continue
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                issues = data.get('issues', [])
                 if not issues:
                     break
 
-                for issue in issues:
+                # Set total on first request
+                if total_count == 0:
+                    total_count = data.get('total', len(issues))
+
+                # Yield issues as JIRA objects for compatibility
+                for issue_data in issues:
+                    issue = self._create_jira_issue_object(issue_data)
                     yield issue
+                    current_count += 1
 
                 if yield_progress:
                     yield {
                         "progress_update": True,
-                        "current": start_at + len(issues),
-                        "total": issues.total
+                        "current": current_count,
+                        "total": total_count
                     }
 
-                if not paginate or len(issues) < batch_size:
+                # Check for next page - use isLast flag or nextPageToken
+                is_last = data.get('isLast', False)
+                next_page_token = data.get('nextPageToken')
+                
+                if not paginate or is_last or not next_page_token:
                     break
 
-                start_at += batch_size
-
-            except JIRAError as e:
-                if e.status_code == 429:
-                    retry_after = int(e.response.headers.get('Retry-After', 10))
-                    logger.warning(f"[Retry {retries+1}/{max_retries}] 429 Too Many Requests - Backing off for {retry_after} seconds...")
-                    time.sleep(retry_after)
-                    retries += 1
-                else:
-                    logger.error(f"JIRA API error: {e}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error: {e}")
+                retries += 1
+                if retries > max_retries:
+                    logger.warning("Max retries reached.")
                     break
+                time.sleep(2 ** retries)  # Exponential backoff
             except Exception as e:
                 logger.error(f"Unexpected error: {e}")
                 break
 
-        if retries > max_retries:
-            logger.warning("Max retries reached or unrecoverable error.")
+    def _create_jira_issue_object(self, issue_data):
+        """Create a JIRA issue object from raw API response data for compatibility"""
+        class JiraIssueCompat:
+            def __init__(self, data):
+                # The raw data should be in the format expected by issueWrapper.py
+                # which expects issue['fields'] and issue['changelog'] etc.
+                self.raw = data
+                self.key = data['key']
+                self.fields = data.get('fields', {})
+
+        return JiraIssueCompat(issue_data)
+
+    def search_issues(self, jql_str, max_retries=10, batch_size=100, paginate=True, expand=None, yield_progress=False, **kwargs):
+        """Main search method that now uses v3 API by default"""
+        return self.search_issues_v3(jql_str, max_retries, batch_size, paginate, expand, yield_progress, **kwargs)
 
 
     def load_epic_metadata(self):

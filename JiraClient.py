@@ -180,7 +180,15 @@ class JiraClient(JiraWrapper):
 
 
             if event['type'] == "comment":
-                event['body'] = event['body'].replace("\n", "-")
+                # Handle both string and dict comment bodies
+                if isinstance(event['body'], str):
+                    event['body'] = event['body'].replace("\n", "-")
+                elif isinstance(event['body'], dict):
+                    # For v3 API, comment body might be in document format
+                    # Extract plain text from the structure
+                    event['body'] = self._extract_comment_text(event['body'])
+                else:
+                    event['body'] = str(event['body']).replace("\n", "-")
                 filtered_events.append(event)
 
         result = {
@@ -201,7 +209,27 @@ class JiraClient(JiraWrapper):
         else:
             result["board_model"] = issue.board_model if issue.board_model else 'N/A'
 
-        return result 
+        return result
+
+    def _extract_comment_text(self, comment_body):
+        """Extract plain text from Jira v3 API comment body structure"""
+        if isinstance(comment_body, str):
+            return comment_body.replace("\n", "-")
+        
+        if isinstance(comment_body, dict):
+            # Jira v3 uses document format for rich text
+            if 'content' in comment_body:
+                text_parts = []
+                for content_item in comment_body.get('content', []):
+                    if content_item.get('type') == 'paragraph':
+                        for paragraph_content in content_item.get('content', []):
+                            if paragraph_content.get('type') == 'text':
+                                text_parts.append(paragraph_content.get('text', ''))
+                return ' '.join(text_parts).replace("\n", "-")
+            # Fallback to string representation
+            return str(comment_body).replace("\n", "-")
+        
+        return str(comment_body).replace("\n", "-") 
 
 
     def get_issue_summary_from_epic(self, epic_key):

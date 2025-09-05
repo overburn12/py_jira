@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os, json, time
 
 from JiraClient import JiraClient
+from helper import logger
 
 app = Flask(__name__)
 CORS(app)
@@ -110,7 +111,10 @@ def api_get_issue_summary():
         serial = data['serial']
         return client.create_issue_summary_by_serial_from_epic(serial, epic_key)
     except Exception as e:
-        return jsonify({"error": "Internal server error"})
+        logger.error(f"Error in /api/get_issue_summary: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route('/api/update_board', methods=['POST'])
