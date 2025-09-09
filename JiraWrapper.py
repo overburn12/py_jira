@@ -26,8 +26,13 @@ class JiraWrapper:
         self.RATE_LIMIT_DELAY = 1.0
         self.jira = self.connect()
         self.data_directory = "jira_dumps"
-        self.epic_metadata_file = "epic-list.json"
         self.epic_prune_file = "epic_prune.json"
+        
+        # Fetch and store epic metadata in memory on app load
+        self.epic_metadata = self.get_epics_from_jira()
+        if self.epic_metadata is None:
+            logger.error("Failed to fetch epics from JIRA API during initialization")
+            self.epic_metadata = []
 
         # Load epic metadata into memory
         rt_epic_data = self.load_epic_metadata() 
@@ -182,26 +187,10 @@ class JiraWrapper:
 
 
     def load_epic_metadata(self):
-        #returns epic metadata from file
-        epic_metadata_file = os.path.join(self.data_directory, self.epic_metadata_file)
-        try:
-            with open(epic_metadata_file, 'r', encoding='utf-8') as f:
-                epic_metadata = json.load(f)
-        except Exception as e:
-            epic_metadata = None
-
-        if epic_metadata is None:
-            epic_metadata = self.get_epics_from_jira()
-            try:
-                with open(epic_metadata_file, 'w', encoding='utf-8') as f:
-                    json.dump(epic_metadata, f, indent=2)
-            except Exception as e:
-                logger.exception(f"Failed to write epic list file: {e}")
-                return None
-            
+        #returns epic metadata from stored variable
         epic_prune_list = self.get_epic_prune_list()
         filtered_epics = []
-        for epic in epic_metadata:
+        for epic in self.epic_metadata:
             if epic['key'] not in epic_prune_list:
                 filtered_epics.append(epic)
         
