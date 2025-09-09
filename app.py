@@ -195,6 +195,20 @@ def api_get_holidays():
         return jsonify({'error': 'error in get_holidays'})
 
 
+@app.route('/api/get_duplicate_serials', methods=['GET'])
+def api_get_duplicate_serials():
+    try:
+        epic_key = request.args.get('epic_key')
+        if not epic_key:
+            return jsonify({'error': 'epic_key parameter is required'}), 400
+
+        duplicates = client.find_duplicate_serials_in_epic(epic_key)
+        return jsonify(duplicates)
+    except Exception as e:
+        logger.error(f"Error in /api/get_duplicate_serials: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 #--------------------------------------------------------------------------------------
 
 @app.route('/favicon.ico')

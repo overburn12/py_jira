@@ -17,6 +17,35 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Function to check for duplicate serials
+async function checkForDuplicates(epicKey) {
+    try {
+        const response = await fetch(`/api/get_duplicate_serials?epic_key=${epicKey}`);
+        const duplicates = await response.json();
+        
+        const warningDiv = document.getElementById('duplicate-warning');
+        const detailsTextarea = document.getElementById('duplicate-details');
+        
+        if (duplicates && duplicates.length > 0) {
+            // Format duplicate information
+            let duplicateText = `Found ${duplicates.length} duplicate serial number(s):\n\n`;
+            
+            duplicates.forEach((duplicate, index) => {
+                duplicateText += `${index + 1}. Serial: "${duplicate.serial}"\n`;
+                duplicateText += `   Issue Keys: ${duplicate.keys.join(', ')}\n\n`;
+            });
+            
+            detailsTextarea.value = duplicateText;
+            warningDiv.style.display = 'block';
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error checking for duplicates:', error);
+        // Don't show warning on error - fail silently
+    }
+}
+
 // Function to load timeline data
 async function loadTimelineData(rtValue) {
     const infoDisplay = document.getElementById('chart-info');
@@ -33,6 +62,9 @@ async function loadTimelineData(rtValue) {
         if (pageTitle && data_raw.title) {
             pageTitle.textContent = data_raw.title;
         }
+
+        // Check for duplicates after loading timeline data
+        await checkForDuplicates(data_raw.rt);
 
         data = formatTimelineForChartjs(data_raw);
         

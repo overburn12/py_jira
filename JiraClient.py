@@ -368,6 +368,45 @@ class JiraClient(JiraWrapper):
         except Exception as e:
             logger.error(f"Error updating board data for serial {serial}: {e}")
 
+    def find_duplicate_serials_in_epic(self, epic_key):
+        """
+        Finds duplicate serial numbers within an epic's issues.
+        Returns a list of objects with serial and duplicate issue keys.
+        """
+        if epic_key not in self.epics:
+            logger.error(f"Epic {epic_key} not found")
+            return []
+
+        epic = self.epics[epic_key]
+        serial_to_keys = {}
+        duplicates = []
+
+        # Check tasks (hashboards)
+        for task in epic.tasks:
+            serial = task.serial.strip() if task.serial else ""
+            if serial:
+                if serial not in serial_to_keys:
+                    serial_to_keys[serial] = []
+                serial_to_keys[serial].append(task.key)
+
+        # Check stories (chassis)
+        for story in epic.stories:
+            serial = story.serial.strip() if story.serial else ""
+            if serial:
+                if serial not in serial_to_keys:
+                    serial_to_keys[serial] = []
+                serial_to_keys[serial].append(story.key)
+
+        # Find duplicates
+        for serial, keys in serial_to_keys.items():
+            if len(keys) > 1:
+                duplicates.append({
+                    'serial': serial,
+                    'keys': keys
+                })
+
+        return duplicates
+
 
 #-----------------------------------------------------------------------------------------------------------
 # Timeline Functions
