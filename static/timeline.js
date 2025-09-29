@@ -1,6 +1,8 @@
 const ctx = document.getElementById('timeline-chart').getContext('2d');
 let timelineChart = null;
 let currentOrderKey = null;
+let originalTimelineData = null;
+let originalChartData = null;
 
 // Function to parse URL parameters
 function getUrlParameter(name) {
@@ -46,6 +48,166 @@ async function checkForDuplicates(epicKey) {
     }
 }
 
+// Function to extract all unique assignees from timeline data
+function extractAssignees(timelineData) {
+    const assignees = new Set();
+    
+    for (const date in timelineData) {
+        for (const status in timelineData[date]) {
+            const issues = timelineData[date][status];
+            if (Array.isArray(issues)) {
+                issues.forEach(issue => {
+                    if (issue.assignee && issue.assignee.trim() !== '') {
+                        assignees.add(issue.assignee.trim());
+                    }
+                });
+            }
+        }
+    }
+    
+    return Array.from(assignees).sort();
+}
+
+// Function to populate the assignee dropdown
+function populateAssigneeDropdown(timelineData) {
+    const dropdown = document.getElementById('assignee-dropdown');
+    const assignees = extractAssignees(timelineData);
+    
+    // Clear existing options except the first one
+    dropdown.innerHTML = '<option value="">Select an assignee...</option>';
+    
+    // Add assignee options
+    assignees.forEach(assignee => {
+        const option = document.createElement('option');
+        option.value = assignee;
+        option.textContent = assignee;
+        dropdown.appendChild(option);
+    });
+}
+
+// Function to filter timeline data by assignee
+function filterTimelineByAssignee(timelineData, selectedAssignee) {
+    if (!selectedAssignee) {
+        return timelineData;
+    }
+    
+    const filteredTimeline = {};
+    
+    for (const date in timelineData) {
+        filteredTimeline[date] = {};
+        
+        for (const status in timelineData[date]) {
+            const issues = timelineData[date][status];
+            if (Array.isArray(issues)) {
+                const filteredIssues = issues.filter(issue => 
+                    issue.assignee && issue.assignee.trim() === selectedAssignee
+                );
+                filteredTimeline[date][status] = filteredIssues;
+            } else {
+                filteredTimeline[date][status] = issues;
+            }
+        }
+    }
+    
+    return filteredTimeline;
+}
+
+// Function to restore original chart data
+async function restoreOriginalChart() {
+    if (!originalTimelineData || !originalChartData) return;
+    
+    // Restore original timeline data
+    window.timeline = originalTimelineData.timeline;
+    
+    // Clear old chart if it exists
+    if (timelineChart) {
+        timelineChart.destroy();
+    }
+    
+    // Clear chart info
+    const infoDisplay = document.getElementById('chart-info');
+    infoDisplay.innerHTML = '';
+    
+    // Render original chart
+    await renderChart(originalChartData);
+    
+    // Restore click functionality
+    timelineChart.options.onClick = (event, elements) => {
+        if (!elements.length) return;
+    
+        const point = elements[0];
+        const datasetIndex = point.datasetIndex;
+        const index = point.index;
+    
+        const dataset = timelineChart.data.datasets[datasetIndex];
+        const label = dataset.label;
+        const dateStr = timelineChart.data.labels[index];
+        const yValue = dataset.data[index];
+        
+        const infoDisplay = document.getElementById('chart-info');
+        infoDisplay.innerHTML = `<center><h2>${label}</h2></center>`;
+        infoDisplay.append(generateSerialList(dateStr, label, yValue));
+    };
+}
+
+// Function to update chart with filtered data
+async function updateChartWithFilter(selectedAssignee) {
+    if (!originalTimelineData) return;
+    
+    // If no assignee selected, restore original chart
+    if (!selectedAssignee) {
+        await restoreOriginalChart();
+        return;
+    }
+    
+    const filteredTimeline = filterTimelineByAssignee(originalTimelineData.timeline, selectedAssignee);
+    
+    // Update window.timeline to filtered data
+    window.timeline = filteredTimeline;
+    
+    // Create filtered data object for chart
+    const filteredData = {
+        ...originalTimelineData,
+        timeline: filteredTimeline
+    };
+    
+    const chartData = formatTimelineForChartjs(filteredData);
+    
+    if (chartData === null) {
+        alert("No data for selected assignee");
+        return;
+    }
+    
+    // Clear old chart if it exists
+    if (timelineChart) {
+        timelineChart.destroy();
+    }
+    
+    // Clear chart info
+    const infoDisplay = document.getElementById('chart-info');
+    infoDisplay.innerHTML = '';
+    
+    await renderChart(chartData);
+    
+    // Restore click functionality
+    timelineChart.options.onClick = (event, elements) => {
+        if (!elements.length) return;
+    
+        const point = elements[0];
+        const datasetIndex = point.datasetIndex;
+        const index = point.index;
+    
+        const dataset = timelineChart.data.datasets[datasetIndex];
+        const label = dataset.label;
+        const dateStr = timelineChart.data.labels[index];
+        const yValue = dataset.data[index];
+        
+        const infoDisplay = document.getElementById('chart-info');
+        infoDisplay.innerHTML = `<center><h2>${label}</h2></center>`;
+        infoDisplay.append(generateSerialList(dateStr, label, yValue));
+    };
+}
+
 // Function to load timeline data
 async function loadTimelineData(rtValue) {
     const infoDisplay = document.getElementById('chart-info');
@@ -56,6 +218,10 @@ async function loadTimelineData(rtValue) {
 
         window.timeline = data_raw.timeline;
         window.epic_key = data_raw.rt;
+        originalTimelineData = data_raw;
+        
+        // Populate assignee dropdown
+        populateAssigneeDropdown(data_raw.timeline);
 
         // Update the page header with the dynamic title
         const pageTitle = document.getElementById('page-title');
@@ -67,6 +233,9 @@ async function loadTimelineData(rtValue) {
         await checkForDuplicates(data_raw.rt);
 
         data = formatTimelineForChartjs(data_raw);
+        
+        // Store the original chart data
+        originalChartData = data;
         
         // Clear old chart if it exists
         if (timelineChart) {
@@ -759,3 +928,29 @@ function log(data){
         textArea.style.display = 'none';
     }, 5000);
 }
+
+// Add event listeners for assignee filter functionality
+document.addEventListener('DOMContentLoaded', () => {
+    const checkbox = document.getElementById('assignee-filter-checkbox');
+    const dropdown = document.getElementById('assignee-dropdown');
+    
+    if (checkbox && dropdown) {
+        // Handle checkbox toggle
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                dropdown.style.display = 'inline-block';
+            } else {
+                dropdown.style.display = 'none';
+                dropdown.value = '';
+                // Revert to original chart using stored data
+                restoreOriginalChart();
+            }
+        });
+        
+        // Handle dropdown selection
+        dropdown.addEventListener('change', (e) => {
+            const selectedAssignee = e.target.value;
+            updateChartWithFilter(selectedAssignee);
+        });
+    }
+});

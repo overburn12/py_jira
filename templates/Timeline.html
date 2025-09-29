@@ -48,6 +48,15 @@
         <div style="position: relative; height: 100%; width: 100%;">
             <canvas id="timeline-chart"></canvas><br>
         </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <label style="display: flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="assignee-filter-checkbox">
+                Filter by Assignee
+            </label>
+            <select id="assignee-dropdown" style="display: none; min-width: 200px;">
+                <option value="">Select an assignee...</option>
+            </select>
+        </div>
         <div style="display: flex; align-items: center; gap: 8px;">
             <button type="button" id="update-button">Update Order</button>
             <progress id="progressBar" value="0" max="1" style="width: 100%; display: none;"></progress>
